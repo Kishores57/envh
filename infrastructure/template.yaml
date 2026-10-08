@@ -1,0 +1,281 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Description: EcoRoute AI – SAM template for API Gateway, Lambda, DynamoDB, S3, CloudWatch
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 30
+    MemorySize: 256
+    Environment:
+      Variables:
+        AWS_REGION_NAME: !Ref AWS::Region
+        S3_BUCKET: !Ref EcoRouteDataBucket
+        DYNAMODB_HISTORY_TABLE: !Ref AnalysisHistoryTable
+        DYNAMODB_USER_TABLE: !Ref UserPreferencesTable
+        DYNAMODB_ROUTES_TABLE: !Ref SavedRoutesTable
+    Tracing: Active
+    Tags:
+      Project: EcoRouteAI
+      Environment: Production
+
+Resources:
+  # ─── S3 Data Bucket ──────────────────────────────────────────────────────────
+  EcoRouteDataBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub 'ecoroute-ai-data-${AWS::AccountId}'
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      Tags:
+        - Key: Project
+          Value: EcoRouteAI
+
+  # ─── DynamoDB Tables ──────────────────────────────────────────────────────────
+  UserPreferencesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: EcoRoute-UserPreferences
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+      Tags:
+        - Key: Project
+          Value: EcoRouteAI
+
+  SavedRoutesTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: EcoRoute-SavedRoutes
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: userId
+          AttributeType: S
+        - AttributeName: savedAt
+          AttributeType: S
+      KeySchema:
+        - AttributeName: userId
+          KeyType: HASH
+        - AttributeName: savedAt
+          KeyType: RANGE
+      Tags:
+        - Key: Project
+          Value: EcoRouteAI
+
+  AnalysisHistoryTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: EcoRoute-AnalysisHistory
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: analysisId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: analysisId
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: ttl
+        Enabled: true
+      Tags:
+        - Key: Project
+          Value: EcoRouteAI
+
+  # ─── Lambda IAM Role ──────────────────────────────────────────────────────────
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: EcoRoute-LambdaRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
+      Policies:
+        - PolicyName: EcoRouteLambdaPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:GetItem
+                  - dynamodb:PutItem
+                  - dynamodb:UpdateItem
+                  - dynamodb:Query
+                  - dynamodb:Scan
+                Resource:
+                  - !GetAtt UserPreferencesTable.Arn
+                  - !GetAtt SavedRoutesTable.Arn
+                  - !GetAtt AnalysisHistoryTable.Arn
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub '${EcoRouteDataBucket.Arn}/*'
+              - Effect: Allow
+                Action:
+                  - sagemaker:InvokeEndpoint
+                Resource: !Sub 'arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:endpoint/ecoroute-pm25-forecast'
+
+  # ─── Lambda Functions ─────────────────────────────────────────────────────────
+  RouteAnalysisFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: EcoRoute-routeAnalysis
+      Handler: handler.handler
+      CodeUri: lambda/routeAnalysis/
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Description: Analyzes routes and returns environmental exposure scores
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /analyze-route
+            Method: post
+            RestApiId: !Ref EcoRouteApi
+
+  ExposureAnalysisFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: EcoRoute-exposureAnalysis
+      Handler: handler.handler
+      CodeUri: lambda/exposureAnalysis/
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Description: Calculates per-segment environmental exposure
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /exposure
+            Method: post
+            RestApiId: !Ref EcoRouteApi
+
+  # Health check function
+  HealthFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: EcoRoute-health
+      Handler: index.handler
+      CodeUri: lambda/health/
+      Role: !GetAtt LambdaExecutionRole.Arn
+      InlineCode: |
+        def handler(event, context):
+            return {"statusCode": 200, "headers": {"Access-Control-Allow-Origin": "*"}, "body": '{"status":"ok","service":"EcoRoute AI"}'}
+      Events:
+        ApiEvent:
+          Type: Api
+          Properties:
+            Path: /health
+            Method: get
+            RestApiId: !Ref EcoRouteApi
+
+  # ─── API Gateway ──────────────────────────────────────────────────────────────
+  EcoRouteApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: EcoRoute-API
+      StageName: prod
+      Cors:
+        AllowMethods: "'POST,GET,OPTIONS'"
+        AllowHeaders: "'Content-Type,Authorization'"
+        AllowOrigin: "'*'"
+      Auth:
+        DefaultAuthorizer: NONE
+      Tags:
+        Project: EcoRouteAI
+
+  # ─── CloudWatch Dashboard ─────────────────────────────────────────────────────
+  EcoRouteDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: EcoRoute-AI-Dashboard
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "properties": {
+                "title": "Lambda Invocations",
+                "metrics": [
+                  ["AWS/Lambda", "Invocations", "FunctionName", "EcoRoute-routeAnalysis"],
+                  ["AWS/Lambda", "Invocations", "FunctionName", "EcoRoute-exposureAnalysis"]
+                ],
+                "period": 300,
+                "stat": "Sum"
+              }
+            },
+            {
+              "type": "metric",
+              "properties": {
+                "title": "API Gateway Errors",
+                "metrics": [
+                  ["AWS/ApiGateway", "5XXError", "ApiName", "EcoRoute-API"],
+                  ["AWS/ApiGateway", "4XXError", "ApiName", "EcoRoute-API"]
+                ],
+                "period": 300,
+                "stat": "Sum"
+              }
+            },
+            {
+              "type": "metric",
+              "properties": {
+                "title": "Lambda Duration (ms)",
+                "metrics": [
+                  ["AWS/Lambda", "Duration", "FunctionName", "EcoRoute-routeAnalysis"],
+                  ["AWS/Lambda", "Duration", "FunctionName", "EcoRoute-exposureAnalysis"]
+                ],
+                "period": 300,
+                "stat": "Average"
+              }
+            }
+          ]
+        }
+
+  # ─── CloudWatch Alarms ────────────────────────────────────────────────────────
+  LambdaErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: EcoRoute-LambdaErrors
+      AlarmDescription: Lambda error rate exceeded threshold
+      MetricName: Errors
+      Namespace: AWS/Lambda
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 2
+      Threshold: 5
+      ComparisonOperator: GreaterThanThreshold
+
+Outputs:
+  ApiGatewayUrl:
+    Description: API Gateway endpoint URL
+    Value: !Sub 'https://${EcoRouteApi}.execute-api.${AWS::Region}.amazonaws.com/prod'
+    Export:
+      Name: EcoRoute-ApiUrl
+
+  S3BucketName:
+    Description: S3 data bucket name
+    Value: !Ref EcoRouteDataBucket
+    Export:
+      Name: EcoRoute-S3Bucket
+
+  RouteAnalysisFunctionArn:
+    Description: Route Analysis Lambda ARN
+    Value: !GetAtt RouteAnalysisFunction.Arn
