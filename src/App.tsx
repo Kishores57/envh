@@ -1,4 +1,4 @@
-import { Routes, Route } from 'react-router-dom';
+import { Routes, Route, useLocation } from 'react-router-dom';
 import { useState, useCallback } from 'react';
 import type { AppState, RouteRequest } from './types';
 import { Navbar } from './components/Navbar';
@@ -35,6 +35,8 @@ const INITIAL_STATE: AppState = {
 
 function App() {
   const [state, setState] = useState<AppState>(INITIAL_STATE);
+  const location = useLocation();
+  const isDemo = location.pathname === '/demo';
 
   const handleStateChange = useCallback((partial: Partial<AppState>) => {
     setState(prev => ({ ...prev, ...partial }));
@@ -46,7 +48,7 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen bg-dark-900 overflow-hidden">
-      <Navbar />
+      {!isDemo && <Navbar />}
       <div className="flex-1 overflow-hidden">
         <Routes>
           <Route path="/"        element={<Dashboard state={state} onStateChange={handleStateChange} />} />

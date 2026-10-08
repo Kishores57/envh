@@ -4,43 +4,82 @@ import { Wind, LayoutDashboard, Map, BarChart3, Clock, Zap } from 'lucide-react'
 import { PulseIndicator } from './shared';
 
 const NAV_ITEMS = [
-  { path: '/',        label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/routes',  label: 'Routes',    icon: Map },
-  { path: '/insights',label: 'Insights',  icon: BarChart3 },
-  { path: '/history', label: 'History',   icon: Clock },
+  { path: '/',         label: 'Navigate', icon: LayoutDashboard },
+  { path: '/routes',   label: 'Routes',   icon: Map },
+  { path: '/insights', label: 'Insights', icon: BarChart3 },
+  { path: '/history',  label: 'History',  icon: Clock },
 ];
 
 export const Navbar: React.FC = () => {
   const { pathname } = useLocation();
 
   return (
-    <header className="fixed top-0 left-0 right-0 z-50 h-14 glass-card border-b border-slate-800/60 border-x-0 border-t-0 rounded-none flex items-center px-6">
+    <header style={{
+      position: 'fixed',
+      top: 0, left: 0, right: 0,
+      zIndex: 1000,
+      height: '56px',
+      background: 'rgba(7, 17, 15, 0.97)',
+      borderBottom: '1.5px solid #29423B',
+      display: 'flex',
+      alignItems: 'center',
+      padding: '0 20px',
+      gap: 0,
+      boxShadow: '0 4px 0 rgba(0,0,0,0.35), 0 8px 24px rgba(0,0,0,0.4)',
+      backdropFilter: 'blur(20px)',
+    }}>
       {/* Logo */}
-      <Link to="/" className="flex items-center gap-2.5 mr-8">
-        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-eco-500 to-teal-500 flex items-center justify-center glow-eco">
-          <Wind size={16} className="text-white" />
+      <Link to="/" style={{ display: 'flex', alignItems: 'center', gap: 10, marginRight: 28, textDecoration: 'none', flexShrink: 0 }}>
+        <div style={{
+          width: 34, height: 34,
+          borderRadius: 10,
+          background: 'linear-gradient(145deg, #00C982, #00a06a)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 3px 0 #006b47, 0 6px 20px rgba(0, 201, 130, 0.3)',
+          border: '1px solid rgba(0, 201, 130, 0.4)',
+          flexShrink: 0,
+        }}>
+          <Wind size={16} color="#07110F" strokeWidth={2.5} />
         </div>
-        <div className="flex flex-col leading-none">
-          <span className="font-display font-bold text-base text-gradient">EcoRoute AI</span>
-          <span className="text-[10px] text-slate-500 -mt-0.5">Navigate Smarter. Breathe Better.</span>
+        <div style={{ lineHeight: 1 }}>
+          <div style={{ fontFamily: 'Outfit, sans-serif', fontWeight: 800, fontSize: 16, color: '#F4F7F5', letterSpacing: '-0.02em' }}>
+            EcoRoute <span style={{ background: 'linear-gradient(135deg, #00C982, #16D99A)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>AI</span>
+          </div>
+          <div style={{ fontSize: 9, color: '#516860', fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', marginTop: 1 }}>
+            Navigate Smarter. Breathe Better.
+          </div>
         </div>
       </Link>
 
       {/* Nav */}
-      <nav className="flex items-center gap-1 flex-1">
+      <nav style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1 }}>
         {NAV_ITEMS.map(({ path, label, icon: Icon }) => {
           const active = pathname === path;
           return (
             <Link
               key={path}
               to={path}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-all duration-200 ${
-                active
-                  ? 'bg-eco-500/10 text-eco-400 border border-eco-500/20'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/60'
-              }`}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 6,
+                padding: '6px 12px',
+                borderRadius: 8,
+                fontSize: 12,
+                fontWeight: 600,
+                textDecoration: 'none',
+                letterSpacing: '0.01em',
+                transition: 'all 0.15s ease',
+                ...(active ? {
+                  background: 'rgba(0, 201, 130, 0.08)',
+                  color: '#00C982',
+                  border: '1.5px solid rgba(0, 201, 130, 0.2)',
+                  boxShadow: '0 2px 8px rgba(0, 201, 130, 0.08)',
+                } : {
+                  color: '#81938D',
+                  border: '1.5px solid transparent',
+                }),
+              }}
             >
-              <Icon size={14} />
+              <Icon size={13} />
               {label}
             </Link>
           );
@@ -48,16 +87,40 @@ export const Navbar: React.FC = () => {
       </nav>
 
       {/* Right side */}
-      <div className="flex items-center gap-4">
-        <PulseIndicator color="#22c55e" label="Environmental data" />
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        <PulseIndicator color="#00C982" label="Live data" />
         <Link
           to="/demo"
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-gradient-to-r from-eco-600 to-teal-600 text-white text-sm font-semibold hover:from-eco-500 hover:to-teal-500 transition-all duration-200"
+          style={{
+            display: 'flex', alignItems: 'center', gap: 6,
+            padding: '7px 14px',
+            borderRadius: 9,
+            background: 'linear-gradient(145deg, #00C982, #009e68)',
+            color: '#07110F',
+            fontSize: 12,
+            fontWeight: 700,
+            textDecoration: 'none',
+            letterSpacing: '0.02em',
+            boxShadow: '0 3px 0 #006b47, 0 6px 16px rgba(0, 201, 130, 0.25)',
+            transition: 'transform 0.12s, box-shadow 0.12s',
+          }}
+          onMouseOver={e => {
+            (e.currentTarget as HTMLElement).style.transform = 'translateY(-1px)';
+            (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 0 #006b47, 0 8px 24px rgba(0, 201, 130, 0.35)';
+          }}
+          onMouseOut={e => {
+            (e.currentTarget as HTMLElement).style.transform = '';
+            (e.currentTarget as HTMLElement).style.boxShadow = '0 3px 0 #006b47, 0 6px 16px rgba(0, 201, 130, 0.25)';
+          }}
         >
-          <Zap size={14} />
+          <Zap size={13} />
           Demo Mode
         </Link>
-        <span className="text-xs text-slate-600 border border-slate-700/50 px-2 py-1 rounded">
+        <span style={{
+          fontSize: 10, color: '#516860', fontWeight: 700,
+          border: '1px solid #1E332E', padding: '3px 7px', borderRadius: 5,
+          fontFamily: 'Space Mono, monospace',
+        }}>
           v1.0.0
         </span>
       </div>

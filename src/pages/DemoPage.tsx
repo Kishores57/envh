@@ -1,674 +1,1277 @@
-import React, { useState, useEffect } from 'react';
-import { EcoMap } from '../components/Map/EcoMap';
-import { ScoreRing, ExposureBadge, LoadingSpinner } from '../components/shared';
-import {
-  getDemoAnalysisResult,
-  getOnlyRouteDemoResult,
-  DEMO_ORIGIN_COORDS,
-  DEMO_DEST_COORDS,
-  DEMO_POLLUTION_TIMESERIES,
-  DEMO_AWS_SERVICES,
-} from '../data/demoData';
-import type { RouteAnalysisResult, RouteSegment } from '../types';
-import { formatDuration, exposureColor } from '../lib/scoring';
+import React, { useState } from 'react';
+import { Link } from 'react-router-dom';
 import {
   AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, BarChart, Bar,
+  ResponsiveContainer,
 } from 'recharts';
-import {
-  Wind, CheckCircle2, AlertTriangle, TrendingDown, ChevronRight,
-  Zap, Server, Database, Cloud, Activity, Info, Award,
-  Shield, MapPin, Navigation, Thermometer,
-} from 'lucide-react';
+import { DEMO_POLLUTION_TIMESERIES, DEMO_AWS_SERVICES } from '../data/demoData';
 
 type DemoStep = 'intro' | 'routes' | 'only-route' | 'prediction' | 'aws' | 'impact';
+type CommuteMode = 'walk' | 'bike' | 'car';
 
-const STEPS: { id: DemoStep; label: string; time: string }[] = [
-  { id: 'intro',       label: '1. Problem',       time: '0:00' },
-  { id: 'routes',      label: '2. Route Demo',    time: '0:40' },
-  { id: 'only-route',  label: '3. Only Route',    time: '1:25' },
-  { id: 'prediction',  label: '4. AI Prediction', time: '1:50' },
-  { id: 'aws',         label: '5. AWS Stack',     time: '2:15' },
-  { id: 'impact',      label: '6. Impact',        time: '2:40' },
+const STEPS: { id: DemoStep; label: string; num: string }[] = [
+  { id: 'intro', label: 'Overview', num: '01' },
+  { id: 'routes', label: 'Route Demo', num: '02' },
+  { id: 'only-route', label: 'Only Route', num: '03' },
+  { id: 'prediction', label: 'AI Forecaster', num: '04' },
+  { id: 'aws', label: 'Cloud Stack', num: '05' },
+  { id: 'impact', label: 'Impact', num: '06' },
 ];
 
-const CustomTooltip = ({ active, payload, label }: any) => {
-  if (!active || !payload) return null;
-  return (
-    <div style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 8, padding: '8px 12px', fontSize: 11 }}>
-      <p style={{ fontWeight: 600, color: '#f8fafc', marginBottom: 4 }}>{label}</p>
-      {payload.map((p: any) => (
-        <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div style={{ width: 8, height: 8, borderRadius: '50%', background: p.color }} />
-          <span style={{ color: '#94a3b8' }}>{p.name}:</span>
-          <span style={{ fontWeight: 600, color: '#f8fafc' }}>{Math.round(p.value)}</span>
-        </div>
-      ))}
-    </div>
-  );
-};
-
 export const DemoPage: React.FC = () => {
-  const [activeStep, setActiveStep] = useState<DemoStep>('intro');
-  const [isLoading, setIsLoading] = useState(false);
-  const [result, setResult] = useState<RouteAnalysisResult | null>(null);
-  const [onlyResult, setOnlyResult] = useState<RouteAnalysisResult | null>(null);
-  const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
-  const [selectedSegment, setSelectedSegment] = useState<RouteSegment | null>(null);
-  const [awsAnimating, setAwsAnimating] = useState(false);
-  const [awsActiveIdx, setAwsActiveIdx] = useState(-1);
+  const [activeStep, setActiveStep] = useState<DemoStep>('routes');
+  const [selectedRoute, setSelectedRoute] = useState<'A' | 'B' | 'C'>('B');
+  const [commuteMode, setCommuteMode] = useState<CommuteMode>('bike');
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [layers, setLayers] = useState({ pm25: true, canopy: true, heat: true });
+  const [activeHotspot, setActiveHotspot] = useState<'smog' | 'heat' | null>(null);
+  const [guidanceActive, setGuidanceActive] = useState(false);
+  const [simulationRunning, setSimulationRunning] = useState(false);
+  const [simTick, setSimTick] = useState(0);
 
-  // Preload demo data
-  useEffect(() => {
-    setResult(getDemoAnalysisResult('cleanest'));
-    setOnlyResult(getOnlyRouteDemoResult());
-  }, []);
+  // Commute mode multipliers
+  const modeMultiplier = commuteMode === 'walk' ? 3.1 : commuteMode === 'bike' ? 1.0 : 0.64;
 
-  const goToStep = async (step: DemoStep) => {
-    if (step === 'routes' && !result) {
-      setIsLoading(true);
-      await new Promise(r => setTimeout(r, 1500));
-      setResult(getDemoAnalysisResult('cleanest'));
-      setIsLoading(false);
-    }
-    setActiveStep(step);
-    setSelectedRouteId(null);
-    setSelectedSegment(null);
-
-    if (step === 'routes') {
-      await new Promise(r => setTimeout(r, 500));
-      setSelectedRouteId('route-b');
-    }
-
-    if (step === 'aws') {
-      setAwsAnimating(true);
-      setAwsActiveIdx(-1);
-      for (let i = 0; i < DEMO_AWS_SERVICES.length; i++) {
-        await new Promise(r => setTimeout(r, 600));
-        setAwsActiveIdx(i);
-      }
-    }
+  const routeDetails = {
+    A: {
+      name: 'Route A (Direct Arterial)',
+      type: 'Direct Arterial',
+      color: '#ff7043',
+      time: Math.round(18 * modeMultiplier),
+      pm25: '48.6 µg',
+      exposure: 79,
+      risk: 'High',
+      tag: 'FASTEST',
+      desc: 'Follows major high-density vehicle arterial with peak exhaust stagnation.',
+      shade: '22%',
+      temp: '35.6°C',
+    },
+    B: {
+      name: 'Route B (Canopy Greenway)',
+      type: 'Canopy Corridor',
+      color: '#00C982',
+      time: Math.round(22 * modeMultiplier),
+      pm25: '12.1 µg',
+      exposure: 31,
+      risk: 'Low',
+      tag: 'RECOMMENDED',
+      desc: 'Bypasses Magadi smog corridor via shaded residential greenway and tree canopy.',
+      shade: '84%',
+      temp: '31.4°C',
+    },
+    C: {
+      name: 'Route C (Suburban Ring)',
+      type: 'Suburban Ring',
+      color: '#fbc02d',
+      time: Math.round(20 * modeMultiplier),
+      pm25: '28.4 µg',
+      exposure: 54,
+      risk: 'Med',
+      tag: 'BALANCED',
+      desc: 'Circumferential ring road with moderate vehicle flow and periodic tree cover.',
+      shade: '48%',
+      temp: '33.1°C',
+    },
   };
 
-  const recommended = result?.routes.find(r => r.id === 'route-b');
-  // fastest route is used for comparison context only
+  const handleAnalyze = () => {
+    setIsAnalyzing(true);
+    setTimeout(() => {
+      setIsAnalyzing(false);
+      setSelectedRoute('B');
+    }, 900);
+  };
+
+  const handleSimulate = () => {
+    setSimulationRunning(true);
+    let count = 0;
+    const interval = setInterval(() => {
+      count++;
+      setSimTick(count);
+      if (count >= 5) {
+        clearInterval(interval);
+        setSimulationRunning(false);
+        setSimTick(0);
+      }
+    }, 600);
+  };
 
   return (
-    <div className="h-full pt-14 bg-dark-900 overflow-hidden flex flex-col">
+    <div className="bg-surface font-body text-on-surface antialiased min-h-screen flex flex-col overflow-x-hidden selection:bg-primary-container selection:text-on-primary-container">
+      {/* ─── 1. TOP HEADER ─── */}
+      <header className="fixed top-0 left-0 right-0 z-50 bg-surface-container-low/95 backdrop-blur-md border-b border-outline-variant/60 shadow-[0_4px_16px_rgba(0,0,0,0.4)]">
+        <div className="h-16 w-full px-5 flex items-center justify-between gap-4">
+          {/* Logo */}
+          <Link to="/" className="flex items-center gap-3 shrink-0 text-decoration-none">
+            <div className="w-10 h-10 rounded-xl bg-primary flex items-center justify-center shadow-[0_3px_0_#008a58] transition-transform hover:scale-105">
+              <span className="material-symbols-outlined text-[#002b18] text-[22px] font-bold">eco</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="font-headline font-extrabold text-[20px] text-white tracking-tight">EcoRoute</span>
+              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/40 uppercase tracking-wider">
+                AI ENGINE
+              </span>
+            </div>
+          </Link>
 
-      {/* Step bar */}
-      <div className="flex-shrink-0 border-b border-slate-800/60 px-6 py-3 bg-dark-800/80">
-        <div className="flex items-center gap-2 max-w-6xl mx-auto">
-          <span className="text-xs text-eco-400 font-bold uppercase tracking-wider mr-2">Demo</span>
-          <div className="flex gap-1 flex-1 overflow-x-auto">
-            {STEPS.map((s, i) => (
-              <button
-                key={s.id}
-                onClick={() => goToStep(s.id)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200 whitespace-nowrap ${
-                  activeStep === s.id
-                    ? 'bg-eco-500/15 text-eco-400 border border-eco-500/30'
-                    : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800/50'
-                }`}
-              >
-                <span className="w-4 h-4 rounded-full text-[10px] font-bold flex items-center justify-center"
-                  style={activeStep === s.id ? { background: '#22c55e22', color: '#22c55e' } : { background: '#1e293b', color: '#475569' }}>
-                  {i + 1}
-                </span>
-                {s.label}
-                <span className="text-slate-600 text-[10px]">{s.time}</span>
-              </button>
-            ))}
+          {/* Navigation Timeline (Journey steps) */}
+          <div className="hidden xl:flex items-center">
+            <nav className="flex items-center gap-1.5 p-1 rounded-2xl bg-surface-container-lowest border border-outline-variant/50">
+              {STEPS.map((s) => {
+                const isActive = activeStep === s.id;
+                return (
+                  <button
+                    key={s.id}
+                    onClick={() => setActiveStep(s.id)}
+                    className={`px-3 py-1.5 rounded-xl font-mono text-xs transition-all flex items-center gap-1.5 ${
+                      isActive
+                        ? 'bg-primary text-[#002b18] font-bold shadow-[0_2px_0_#007a4e]'
+                        : 'text-on-surface-variant hover:text-white'
+                    }`}
+                  >
+                    {isActive && <span className="w-2 h-2 rounded-full bg-[#002b18] animate-pulse" />}
+                    <span>{s.num}. {s.label}</span>
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
+
+          {/* Telemetry Status Right */}
+          <div className="flex items-center gap-3 shrink-0">
+            <div className="hidden md:flex items-center gap-2 px-3 py-1.5 rounded-xl bg-surface-container border border-outline-variant/60 shadow-sm">
+              <span className="w-2 h-2 rounded-full bg-primary animate-ping" />
+              <span className="text-xs font-mono text-on-surface-variant">GRID:</span>
+              <span className="text-xs font-mono font-bold text-primary">48 MONITORS</span>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-1 rounded-xl bg-[#ff7043]/15 border border-[#ff7043]/30 text-[#ffab91] text-xs font-bold font-mono">
+              <span className="w-2 h-2 rounded-full bg-[#ff7043]" />
+              LIVE SENSORS
+            </div>
+            <Link
+              to="/"
+              title="Return to Navigation View"
+              className="w-9 h-9 rounded-xl bg-surface-container-high border border-outline-variant flex items-center justify-center text-primary hover:bg-surface-container-highest cursor-pointer transition-colors shadow-sm"
+            >
+              <span className="material-symbols-outlined text-[19px]">account_circle</span>
+            </Link>
           </div>
         </div>
-      </div>
+      </header>
 
-      {/* Content */}
-      <div className="flex-1 overflow-hidden">
-
-        {/* ── INTRO ── */}
-        {activeStep === 'intro' && (
-          <div className="h-full flex flex-col items-center justify-center px-8 text-center bg-animated">
-            <div className="max-w-2xl">
-              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-eco-500 to-teal-500 flex items-center justify-center mx-auto mb-6 glow-eco float-particle">
-                <Wind size={36} className="text-white" />
-              </div>
-              <h1 className="text-4xl font-display font-bold text-gradient mb-4">EcoRoute AI</h1>
-              <p className="text-xl text-slate-300 mb-6 font-light">Navigate Smarter. Breathe Better.</p>
-
-              <div className="glass-card p-6 mb-8 text-left">
-                <p className="text-lg text-slate-200 mb-4 font-medium">
-                  "Navigation tells us how fast we can get there."
-                </p>
-                <p className="text-slate-400 mb-4">
-                  Normal navigation optimizes for time and distance — but it doesn't tell us about the
-                  <span className="text-red-400 font-semibold"> environmental exposure</span> we face on the way.
-                </p>
-                <div className="grid grid-cols-3 gap-4 mt-4">
-                  {[
-                    { icon: <Wind size={20} />, label: 'Air Pollution',    desc: 'PM2.5 · PM10 · AQI', color: '#f97316' },
-                    { icon: <Thermometer size={20} />, label: 'Heat Exposure',  desc: 'Temperature · UV · Humidity', color: '#ef4444' },
-                    { icon: <AlertTriangle size={20} />, label: 'Route Hotspots', desc: 'Corridor-level analysis', color: '#eab308' },
-                  ].map(({ icon, label, desc, color }) => (
-                    <div key={label} className="bg-dark-600 rounded-xl p-3 text-center">
-                      <div style={{ color }} className="mb-2 flex justify-center">{icon}</div>
-                      <p className="text-sm font-semibold text-slate-200">{label}</p>
-                      <p className="text-xs text-slate-500">{desc}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <p className="text-slate-300 text-lg italic">
-                "EcoRoute AI adds an environmental intelligence layer to navigation."
-              </p>
-
-              <button
-                onClick={() => goToStep('routes')}
-                className="mt-8 flex items-center gap-2 mx-auto px-8 py-3 rounded-xl bg-gradient-to-r from-eco-600 to-teal-600 text-white font-semibold hover:from-eco-500 hover:to-teal-500 transition-all duration-200 glow-eco"
-              >
-                Start Demo <ChevronRight size={18} />
-              </button>
+      {/* ─── MAIN CONTAINER ─── */}
+      <main className="w-full pt-16 bg-surface flex flex-col flex-1 min-h-[calc(100vh-4rem)]">
+        {/* ─── 2. TELEMETRY SUB-HEADER BANNER ─── */}
+        <div className="w-full bg-surface-container-low border-b border-outline-variant/50 px-5 py-2 flex flex-wrap items-center justify-between gap-3 text-xs font-mono">
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface-container border border-outline-variant/40">
+              <span className="material-symbols-outlined text-primary text-[15px]">sensors</span>
+              <span className="text-on-surface-variant">Mesh:</span>
+              <span className="text-primary font-bold">10m Hyper-Local</span>
+            </div>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface-container border border-outline-variant/40">
+              <span className="material-symbols-outlined text-[#4be2c8] text-[15px]">air</span>
+              <span className="text-on-surface-variant">Wind:</span>
+              <span className="text-[#4be2c8] font-bold">SSE 8.4 km/h</span>
+            </div>
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface-container border border-outline-variant/40">
+              <span className="material-symbols-outlined text-[#ffab91] text-[15px]">thermostat</span>
+              <span className="text-on-surface-variant">Ambient:</span>
+              <span className="text-[#ffab91] font-bold">28.4°C</span>
             </div>
           </div>
-        )}
+          <div className="flex items-center gap-2">
+            <span className="px-2.5 py-1 rounded-lg bg-primary/15 text-primary border border-primary/30 font-bold flex items-center gap-1.5">
+              <span className="material-symbols-outlined text-[14px]">savings</span>
+              CLEAN CORRIDOR ACTIVE: -58.4 µg PM2.5
+            </span>
+          </div>
+        </div>
 
-        {/* ── ROUTES ── */}
+        {/* ─── 3. STEP: ROUTE DEMO (THE HERO 2D APPLICATION) ─── */}
         {activeStep === 'routes' && (
-          <div className="h-full flex gap-0">
-            {/* Map */}
-            <div className="flex-1 relative">
-              {isLoading ? (
-                <div className="flex items-center justify-center h-full">
-                  <LoadingSpinner size={48} label="Loading demo scenario..." />
+          <div className="relative w-full flex-1 flex flex-col lg:flex-row bg-surface overflow-hidden min-h-[780px]">
+            {/* ── LEFT CONTROL PANEL ── */}
+            <aside className="w-full lg:w-[380px] xl:w-[400px] shrink-0 p-4 bg-surface-container-low border-r border-outline-variant/60 flex flex-col gap-3.5 z-20 overflow-y-auto max-h-[calc(100vh-6.5rem)]">
+              {/* WAYPOINTS */}
+              <div className="bg-surface-container rounded-2xl p-3.5 border border-outline-variant/70 shadow-[0_4px_12px_rgba(0,0,0,0.3)] relative">
+                <div className="flex items-center justify-between mb-2.5">
+                  <span className="text-[11px] font-mono font-bold tracking-wider uppercase text-on-surface-variant flex items-center gap-1.5">
+                    <span className="material-symbols-outlined text-primary text-[15px]">alt_route</span>
+                    WAYPOINTS
+                  </span>
+                  <span className="px-2 py-0.5 rounded-full bg-primary/20 text-primary text-[10px] font-mono font-bold border border-primary/30">
+                    08:30 AM PEAK
+                  </span>
                 </div>
-              ) : result ? (
-                <EcoMap
-                  routes={result.routes}
-                  selectedRouteId={selectedRouteId}
-                  selectedSegmentId={selectedSegment?.id || null}
-                  onSegmentClick={setSelectedSegment}
-                  onRouteClick={id => { setSelectedRouteId(id); setSelectedSegment(null); }}
-                  originCoords={DEMO_ORIGIN_COORDS}
-                  destCoords={DEMO_DEST_COORDS}
-                  originLabel="Home (Rajajinagar)"
-                  destLabel="RV College"
-                />
-              ) : null}
-
-              {/* Scenario label */}
-              <div className="absolute top-3 left-3 z-[500]">
-                <div className="glass-card py-2 px-4">
-                  <div className="flex items-center gap-2 text-xs">
-                    <MapPin size={11} className="text-eco-400" />
-                    <span className="text-eco-400 font-semibold">Rajajinagar</span>
-                    <span className="text-slate-500">→</span>
-                    <Navigation size={11} className="text-blue-400" />
-                    <span className="text-blue-400 font-semibold">RV College</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Right panel */}
-            <div className="w-80 flex-shrink-0 border-l border-slate-800/60 bg-dark-800/80 p-4 overflow-y-auto">
-              {/* Header callout */}
-              <div className="glass-card p-4 border-eco-500/30 mb-4 relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-eco-500/5 to-teal-500/5 pointer-events-none" />
-                <div className="flex items-center gap-2 mb-2 relative">
-                  <Award size={14} className="text-eco-400" />
-                  <span className="text-xs font-bold text-eco-400 uppercase tracking-wider">Recommended Route</span>
-                </div>
-                {recommended && (
-                  <>
-                    <div className="flex items-center gap-3 relative">
-                      <ScoreRing score={recommended.overallExposureScore} size={64} />
-                      <div>
-                        <p className="font-semibold text-slate-100 text-sm">{recommended.name}</p>
-                        <ExposureBadge level={recommended.exposureLevel} />
-                        <p className="text-xs text-slate-400 mt-1">{formatDuration(recommended.totalDurationSeconds)}</p>
-                      </div>
+                <div className="flex flex-col gap-2 relative">
+                  <div className="flex items-center gap-3 p-2.5 rounded-xl bg-surface-container-lowest border border-outline-variant/40">
+                    <div className="w-8 h-8 rounded-xl bg-primary/20 text-primary flex items-center justify-center shrink-0 border border-primary/30">
+                      <span className="material-symbols-outlined text-[18px]">home</span>
                     </div>
-                    <div className="mt-3 pt-3 border-t border-slate-700/50 relative">
-                      <p className="text-xs text-eco-400 font-semibold">
-                        60% lower estimated environmental exposure with only 4 extra minutes
-                      </p>
-                    </div>
-                  </>
-                )}
-              </div>
-
-              {/* All routes */}
-              {result?.routes.map(route => (
-                <button
-                  key={route.id}
-                  onClick={() => { setSelectedRouteId(route.id); setSelectedSegment(null); }}
-                  className={`w-full glass-card-light p-3 mb-2 text-left transition-all duration-200 border ${
-                    selectedRouteId === route.id ? 'border-opacity-100' : 'border-transparent'
-                  }`}
-                  style={selectedRouteId === route.id ? { borderColor: route.color } : {}}
-                >
-                  <div className="flex items-center gap-3">
-                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: route.color, boxShadow: `0 0 6px ${route.color}` }} />
                     <div className="flex-1 min-w-0">
-                      <div className="text-xs font-semibold text-slate-200 truncate">{route.name}</div>
-                      <div className="flex items-center gap-2 mt-0.5">
-                        <span className="text-xs text-slate-500">{formatDuration(route.totalDurationSeconds)}</span>
-                        <ExposureBadge level={route.exposureLevel} size="sm" />
-                      </div>
+                      <span className="text-[10px] font-mono text-on-surface-variant uppercase block">ORIGIN</span>
+                      <span className="text-xs font-semibold text-white truncate block">Indiranagar 100ft Rd</span>
                     </div>
-                    <div className="text-right flex-shrink-0">
-                      <div className="text-sm font-bold" style={{ color: exposureColor(route.exposureLevel) }}>
-                        {route.overallExposureScore}
-                      </div>
-                      <div className="text-xs text-slate-500">score</div>
+                    <span className="w-2 h-2 rounded-full bg-primary" />
+                  </div>
+                  <div className="flex items-center gap-3 p-2.5 rounded-xl bg-surface-container-lowest border border-outline-variant/40">
+                    <div className="w-8 h-8 rounded-xl bg-[#4be2c8]/20 text-[#4be2c8] flex items-center justify-center shrink-0 border border-[#4be2c8]/30">
+                      <span className="material-symbols-outlined text-[18px]">school</span>
                     </div>
-                  </div>
-                </button>
-              ))}
-
-              {/* Why this route */}
-              {recommended && selectedRouteId === 'route-b' && (
-                <div className="glass-card-light p-3 mt-2">
-                  <p className="text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider">Why Route B?</p>
-                  <ul className="space-y-1.5">
-                    {recommended.recommendationReason.map((r, i) => (
-                      <li key={i} className="flex items-start gap-1.5 text-xs text-slate-300">
-                        <CheckCircle2 size={11} className="text-eco-400 mt-0.5 flex-shrink-0" />
-                        {r}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-
-              {/* Selected segment detail */}
-              {selectedSegment && (
-                <div className="glass-card-light p-3 mt-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-xs font-bold text-slate-300">{selectedSegment.streetName}</p>
-                    <button onClick={() => setSelectedSegment(null)} className="text-slate-600 hover:text-slate-400 text-xs">✕</button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div><span className="text-slate-500">PM2.5:</span> <span className="text-slate-200 font-semibold">{selectedSegment.pm25} µg/m³</span></div>
-                    <div><span className="text-slate-500">Temp:</span> <span className="text-slate-200 font-semibold">{selectedSegment.temperature}°C</span></div>
-                    <div><span className="text-slate-500">Shade:</span> <span className="text-slate-200 font-semibold">{selectedSegment.shadeScore}%</span></div>
-                    <div><span className="text-slate-500">Score:</span> <span className="font-bold" style={{ color: exposureColor(selectedSegment.exposureLevel) }}>{selectedSegment.overallExposureScore}</span></div>
-                  </div>
-                </div>
-              )}
-
-              <button
-                onClick={() => goToStep('only-route')}
-                className="w-full mt-4 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-700/60 hover:bg-slate-700 text-slate-300 text-sm font-medium transition-colors"
-              >
-                Next: Only Route Scenario <ChevronRight size={14} />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ── ONLY ROUTE ── */}
-        {activeStep === 'only-route' && onlyResult && (
-          <div className="h-full flex gap-0">
-            <div className="flex-1 relative">
-              <EcoMap
-                routes={onlyResult.routes}
-                selectedRouteId={onlyResult.recommendedRouteId}
-                selectedSegmentId={null}
-                onSegmentClick={setSelectedSegment}
-                onRouteClick={() => {}}
-                originCoords={DEMO_ORIGIN_COORDS}
-                destCoords={DEMO_DEST_COORDS}
-                originLabel="Home"
-                destLabel="RV College"
-              />
-              <div className="absolute top-3 left-3 z-[500]">
-                <div className="glass-card py-2 px-3 border-orange-500/30">
-                  <div className="flex items-center gap-1.5 text-xs">
-                    <AlertTriangle size={11} className="text-orange-400" />
-                    <span className="text-orange-400 font-semibold">Only Practical Route</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="w-80 flex-shrink-0 border-l border-slate-800/60 bg-dark-800/80 p-4 overflow-y-auto">
-              <div className="glass-card p-4 border-orange-500/25 mb-4 relative overflow-hidden">
-                <div className="absolute inset-0 bg-gradient-to-br from-orange-500/5 to-red-500/5 pointer-events-none" />
-                <div className="relative">
-                  <div className="flex items-center gap-2 mb-2">
-                    <AlertTriangle size={14} className="text-orange-400" />
-                    <span className="text-xs font-bold text-orange-400 uppercase tracking-wider">Only Practical Route</span>
-                  </div>
-                  <p className="text-xs text-slate-300 mb-3">
-                    This is currently the only practical route. The highest estimated exposure occurs near the
-                    <span className="text-orange-300 font-semibold"> 500m Magadi Rd traffic corridor</span>.
-                  </p>
-                  <div className="space-y-2">
-                    {onlyResult.onlyRouteAnalysis?.mainContributors.map((c, i) => (
-                      <div key={i} className="flex items-start gap-2 text-xs text-slate-400">
-                        <div className="w-1.5 h-1.5 rounded-full bg-orange-400 mt-1 flex-shrink-0" />
-                        {c}
-                      </div>
-                    ))}
+                    <div className="flex-1 min-w-0">
+                      <span className="text-[10px] font-mono text-on-surface-variant uppercase block">CAMPUS</span>
+                      <span className="text-xs font-semibold text-white truncate block">IISc Main Gate, Malleshwaram</span>
+                    </div>
+                    <span className="text-[10px] font-mono font-bold text-[#4be2c8]">11.4 km</span>
                   </div>
                 </div>
               </div>
 
-              {/* Better departure time */}
-              <div className="glass-card p-4 border-eco-500/25 mb-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <TrendingDown size={14} className="text-eco-400" />
-                  <span className="text-xs font-bold text-eco-400">Better Departure Time</span>
+              {/* COMMUTE MODE */}
+              <div className="bg-surface-container rounded-2xl p-3.5 border border-outline-variant/70 shadow-[0_4px_12px_rgba(0,0,0,0.3)]">
+                <div className="text-[11px] font-mono font-bold tracking-wider uppercase text-on-surface-variant mb-2 flex items-center justify-between">
+                  <span>COMMUTE MODE</span>
+                  <span className="text-[10px] text-primary">SELECT ACTIVE</span>
                 </div>
-                <p className="text-xs text-slate-300 mb-3">
-                  Leaving <span className="text-eco-400 font-semibold">35 minutes later</span> could reduce
-                  estimated exposure by <span className="text-eco-400 font-semibold">35%</span>
-                </p>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => setCommuteMode('walk')}
+                    className={`py-2.5 px-2 rounded-xl flex flex-col items-center gap-1 transition-all ${
+                      commuteMode === 'walk'
+                        ? 'bg-primary text-[#002b18] border border-primary shadow-[0_3px_0_#007a4e] scale-[1.02]'
+                        : 'bg-surface-container-lowest hover:bg-surface-container-high border border-outline-variant/50 text-on-surface-variant'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">directions_walk</span>
+                    <span className="text-[11px] font-bold font-mono">WALK</span>
+                  </button>
+                  <button
+                    onClick={() => setCommuteMode('bike')}
+                    className={`py-2.5 px-2 rounded-xl flex flex-col items-center gap-1 transition-all ${
+                      commuteMode === 'bike'
+                        ? 'bg-primary text-[#002b18] border border-primary shadow-[0_3px_0_#007a4e] scale-[1.02]'
+                        : 'bg-surface-container-lowest hover:bg-surface-container-high border border-outline-variant/50 text-on-surface-variant'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px] font-bold">directions_bike</span>
+                    <span className="text-[11px] font-bold font-mono">BIKE</span>
+                  </button>
+                  <button
+                    onClick={() => setCommuteMode('car')}
+                    className={`py-2.5 px-2 rounded-xl flex flex-col items-center gap-1 transition-all ${
+                      commuteMode === 'car'
+                        ? 'bg-primary text-[#002b18] border border-primary shadow-[0_3px_0_#007a4e] scale-[1.02]'
+                        : 'bg-surface-container-lowest hover:bg-surface-container-high border border-outline-variant/50 text-on-surface-variant'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">directions_car</span>
+                    <span className="text-[11px] font-bold font-mono">CAR</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* SENSORS: WIND & UV */}
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="bg-surface-container rounded-2xl p-3 border border-outline-variant/70 flex flex-col justify-between">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono text-on-surface-variant uppercase font-bold">WIND VECTOR</span>
+                    <span className="material-symbols-outlined text-[#4be2c8] text-[16px]">air</span>
+                  </div>
+                  <div className="my-1.5 flex items-baseline gap-1">
+                    <span className="text-xl font-bold font-mono text-white">8.4</span>
+                    <span className="text-[10px] font-mono text-on-surface-variant">km/h</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="flex-1 h-1.5 rounded-full bg-surface-container-lowest overflow-hidden">
+                      <div className="w-3/5 h-full bg-[#4be2c8] rounded-full" />
+                    </div>
+                    <span className="text-[9px] font-mono text-[#4be2c8] font-bold">FAVORABLE</span>
+                  </div>
+                </div>
+
+                <div className="bg-surface-container rounded-2xl p-3 border border-outline-variant/70 flex flex-col justify-between">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-mono text-on-surface-variant uppercase font-bold">UV & HEAT</span>
+                    <span className="material-symbols-outlined text-[#ffb74d] text-[16px]">wb_sunny</span>
+                  </div>
+                  <div className="my-1.5 flex items-baseline gap-1">
+                    <span className="text-xl font-bold font-mono text-[#ffb74d]">4</span>
+                    <span className="text-[10px] font-mono text-on-surface-variant">MODERATE</span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <div className="flex-1 h-1.5 rounded-full bg-surface-container-lowest overflow-hidden">
+                      <div className="w-2/5 h-full bg-[#ffb74d] rounded-full" />
+                    </div>
+                    <span className="text-[9px] font-mono text-[#ffb74d] font-bold">31.4°C SHADE</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* PROFILE & TARGET */}
+              <div className="bg-surface-container rounded-2xl p-3.5 border border-outline-variant/70 shadow-[0_4px_12px_rgba(0,0,0,0.3)]">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-[11px] font-mono font-bold tracking-wider uppercase text-on-surface-variant">
+                    PROFILE & TARGET
+                  </span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-[#ff6b6b]/20 text-[#ff6b6b] border border-[#ff6b6b]/40 font-bold">
+                    PULMONARY RISK
+                  </span>
+                </div>
                 <div className="grid grid-cols-2 gap-2">
-                  {onlyResult.departureTimeOptions.slice(0, 2).map((d, i) => (
-                    <div key={i} className={`rounded-lg p-2.5 text-center border ${d.isBest ? 'border-eco-500/30 bg-eco-500/10' : 'border-slate-700/40 bg-dark-600'}`}>
-                      <div className="text-xs text-slate-400 mb-1">{d.label}</div>
-                      <div className="text-base font-bold" style={{ color: d.isBest ? '#22c55e' : '#f97316' }}>{d.exposureScore}</div>
-                      <div className="text-xs text-slate-500">exposure</div>
+                  <div className="p-2 rounded-xl bg-primary/10 border border-primary/40 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-primary text-[18px]">child_care</span>
+                    <div className="min-w-0">
+                      <span className="text-xs font-bold text-white block">Student</span>
+                      <span className="text-[10px] font-mono text-primary block">High VO2 Filter</span>
                     </div>
-                  ))}
+                  </div>
+                  <div className="p-2 rounded-xl bg-surface-container-lowest border border-outline-variant/40 flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[#4be2c8] text-[18px]">eco</span>
+                    <div className="min-w-0">
+                      <span className="text-xs font-bold text-white block">Clean Air</span>
+                      <span className="text-[10px] font-mono text-[#4be2c8] block">Lowest PM2.5</span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
-              {/* Practical suggestions */}
-              <div className="glass-card-light p-4 mb-4">
-                <p className="text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider">Exposure Reduction Tips</p>
-                <ul className="space-y-2">
-                  {onlyResult.onlyRouteAnalysis?.practicalSuggestions.map((s, i) => (
-                    <li key={i} className="flex items-start gap-2 text-xs text-slate-300">
-                      <Shield size={11} className="text-eco-400 mt-0.5 flex-shrink-0" />
-                      {s}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-
-              <button
-                onClick={() => goToStep('prediction')}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-700/60 hover:bg-slate-700 text-slate-300 text-sm font-medium transition-colors"
-              >
-                Next: AI Prediction <ChevronRight size={14} />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* ── AI PREDICTION ── */}
-        {activeStep === 'prediction' && (
-          <div className="h-full overflow-y-auto px-6 py-6">
-            <div className="max-w-4xl mx-auto">
-              <div className="text-center mb-6">
-                <h2 className="text-2xl font-display font-bold text-slate-100 mb-1">AI Environmental Prediction</h2>
-                <p className="text-sm text-slate-500">
-                  SageMaker regression model forecasts PM2.5 and heat exposure by time of day
-                </p>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-                <div className="glass-card p-5">
-                  <h3 className="font-semibold text-slate-100 mb-1 text-sm">PM2.5 Forecast (Today)</h3>
-                  <p className="text-xs text-slate-500 mb-4">Shaded = ML-predicted. Dashed line = WHO guideline (15 µg/m³)</p>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <AreaChart data={DEMO_POLLUTION_TIMESERIES} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
-                      <defs>
-                        <linearGradient id="pm25G2" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#f97316" stopOpacity={0.3} />
-                          <stop offset="95%" stopColor="#f97316" stopOpacity={0} />
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                      <XAxis dataKey="hour" tick={{ fill: '#64748b', fontSize: 10 }} />
-                      <YAxis tick={{ fill: '#64748b', fontSize: 11 }} />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Area type="monotone" dataKey="pm25" stroke="#f97316" fill="url(#pm25G2)" strokeWidth={2} name="PM2.5" />
-                    </AreaChart>
-                  </ResponsiveContainer>
+              {/* ANALYZE BUTTON */}
+              <div className="mt-auto pt-2">
+                <button
+                  id="ctaAnalyze"
+                  onClick={handleAnalyze}
+                  className="w-full py-3.5 px-4 rounded-2xl bg-primary text-[#002b18] font-bold text-sm tracking-wide shadow-[0_4px_0_#007a4e,0_10px_20px_rgba(0,201,130,0.3)] hover:brightness-105 active:translate-y-1 active:shadow-[0_1px_0_#007a4e] transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[20px] font-bold">
+                    {isAnalyzing ? 'sync' : 'neurology'}
+                  </span>
+                  {isAnalyzing ? 'COMPUTING ENVIRONMENTAL MATRIX...' : 'ANALYZE ROUTE MATRIX →'}
+                </button>
+                <div className="flex items-center justify-center gap-1.5 mt-2">
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary animate-ping" />
+                  <span className="text-[10px] font-mono text-on-surface-variant">
+                    A* MULTI-OBJECTIVE WEIGHTED ALGORITHM
+                  </span>
                 </div>
+              </div>
+            </aside>
 
-                <div className="glass-card p-5">
-                  <h3 className="font-semibold text-slate-100 mb-4 text-sm">Departure Time vs Exposure</h3>
-                  <ResponsiveContainer width="100%" height={220}>
-                    <BarChart
-                      data={[
-                        { time: '3:00 PM', exposure: 72, color: '#ef4444' },
-                        { time: '3:30 PM', exposure: 61, color: '#f97316' },
-                        { time: '4:00 PM', exposure: 48, color: '#22c55e' },
-                        { time: '5:00 PM', exposure: 55, color: '#eab308' },
-                      ]}
-                      margin={{ top: 5, right: 10, left: -20, bottom: 5 }}
+            {/* ── CENTER HERO 2D ENVIRONMENTAL MAP ── */}
+            <div className="flex-1 relative min-h-[520px] lg:min-h-full bg-[#071311] overflow-hidden" id="mapViewport">
+              {/* Background Grid Pattern */}
+              <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-25" xmlns="http://www.w3.org/2000/svg">
+                <defs>
+                  <pattern id="mapGrid" width="44" height="44" patternUnits="userSpaceOnUse">
+                    <path d="M 44 0 L 0 0 0 44" fill="none" stroke="#1d342c" strokeWidth="0.8" />
+                  </pattern>
+                  <pattern id="mapDots" width="14" height="14" patternUnits="userSpaceOnUse">
+                    <circle cx="2" cy="2" r="0.8" fill="#00C982" opacity="0.35" />
+                  </pattern>
+                </defs>
+                <rect width="100%" height="100%" fill="url(#mapGrid)" />
+                <rect width="100%" height="100%" fill="url(#mapDots)" />
+              </svg>
+
+              {/* Handcrafted Vector Map Layer */}
+              <svg className="absolute inset-0 w-full h-full" id="mapCanvas" viewBox="0 0 1000 780" preserveAspectRatio="xMidYMid slice">
+                <defs>
+                  {/* Clean glowing filter */}
+                  <filter id="glowClean" x="-25%" y="-25%" width="150%" height="150%">
+                    <feGaussianBlur stdDeviation="7" result="blur" />
+                    <feMerge>
+                      <feMergeNode in="blur" />
+                      <feMergeNode in="SourceGraphic" />
+                    </feMerge>
+                  </filter>
+                  {/* Danger Radial Gradient */}
+                  <radialGradient id="dangerRadial" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor="#ff5252" stopOpacity="0.85" />
+                    <stop offset="50%" stopColor="#d32f2f" stopOpacity="0.4" />
+                    <stop offset="90%" stopColor="#7a161d" stopOpacity="0.15" />
+                    <stop offset="100%" stopColor="#071311" stopOpacity="0" />
+                  </radialGradient>
+                  {/* Thermal Radial Gradient */}
+                  <radialGradient id="thermalRadial" cx="50%" cy="50%" r="50%">
+                    <stop offset="0%" stopColor="#ffb74d" stopOpacity="0.75" />
+                    <stop offset="60%" stopColor="#e65100" stopOpacity="0.25" />
+                    <stop offset="100%" stopColor="#071311" stopOpacity="0" />
+                  </radialGradient>
+                  {/* Tree Cluster Symbol */}
+                  <g id="posterTreeCluster">
+                    <circle cx="0" cy="0" r="18" fill="#0f3d30" />
+                    <circle cx="-8" cy="-5" r="13" fill="#145442" />
+                    <circle cx="9" cy="-3" r="12" fill="#17634f" />
+                    <circle cx="1" cy="7" r="11" fill="#1f7a62" />
+                    <circle cx="0" cy="0" r="4.5" fill="#00C982" opacity="0.35" />
+                  </g>
+                </defs>
+
+                {/* 1. Lakes & Water Bodies */}
+                <g opacity="0.95">
+                  <path d="M 280 190 C 320 170, 380 200, 370 250 C 350 280, 310 295, 270 270 C 235 240, 245 210, 280 190 Z" fill="#0c2b29" stroke="#164d4b" strokeWidth="2.5" />
+                  <rect x="270" y="225" width="105" height="20" rx="6" fill="#0a352a" stroke="#4be2c8" strokeWidth="1" />
+                  <text x="278" y="239" fill="#4be2c8" fontSize="9" fontFamily="'JetBrains Mono'" fontWeight="bold">SANKEY LAKE</text>
+
+                  <path d="M 750 490 C 820 480, 850 520, 830 580 C 800 620, 740 600, 720 550 C 710 510, 730 495, 750 490 Z" fill="#0c2b29" stroke="#164d4b" strokeWidth="2.5" />
+                  <rect x="740" y="535" width="100" height="20" rx="6" fill="#0a352a" stroke="#4be2c8" strokeWidth="1" />
+                  <text x="750" y="549" fill="#4be2c8" fontSize="9" fontFamily="'JetBrains Mono'" fontWeight="bold">ULSOOR LAKE</text>
+                </g>
+
+                {/* 2. Green Parks & Canopy Zones */}
+                {layers.canopy && (
+                  <g opacity="0.95">
+                    <path d="M 210 110 Q 380 90 420 160 Q 400 320 300 330 Q 190 290 210 110 Z" fill="#0c3227" opacity="0.55" />
+                    <use href="#posterTreeCluster" x="250" y="150" />
+                    <use href="#posterTreeCluster" x="310" y="130" />
+                    <use href="#posterTreeCluster" x="360" y="170" />
+                    <use href="#posterTreeCluster" x="280" y="290" />
+                    <use href="#posterTreeCluster" x="340" y="270" />
+
+                    <path d="M 520 420 C 580 390, 650 440, 630 520 C 600 580, 510 560, 500 480 Z" fill="#0c3227" opacity="0.55" />
+                    <use href="#posterTreeCluster" x="550" y="460" />
+                    <use href="#posterTreeCluster" x="590" y="500" />
+                  </g>
+                )}
+
+                {/* 3. Base Road Grid (Minor Streets) */}
+                <g stroke="#16312a" strokeWidth="2.5" strokeLinecap="round">
+                  <line x1="120" y1="90" x2="880" y2="90" />
+                  <line x1="150" y1="230" x2="900" y2="230" />
+                  <line x1="100" y1="370" x2="920" y2="370" />
+                  <line x1="80" y1="510" x2="900" y2="510" />
+                  <line x1="120" y1="650" x2="900" y2="650" />
+                  <line x1="180" y1="60" x2="180" y2="730" />
+                  <line x1="340" y1="60" x2="340" y2="730" />
+                  <line x1="490" y1="60" x2="490" y2="730" />
+                  <line x1="660" y1="60" x2="660" y2="730" />
+                  <line x1="820" y1="60" x2="820" y2="730" />
+                </g>
+
+                {/* 4. Major Arterial Road Corridors */}
+                <g stroke="#264b41" strokeWidth="6.5" fill="none" strokeLinecap="round">
+                  <path d="M 140 130 L 360 130 L 520 230 L 880 230" />
+                  <path d="M 860 670 L 680 510 L 460 510 L 280 650" />
+                  <path d="M 520 730 L 520 410 L 360 270 L 220 270" />
+                </g>
+
+                {/* 5. Smog Hotspot (Magadi Road Intersection) */}
+                {layers.pm25 && (
+                  <g
+                    className="cursor-pointer transition-transform hover:scale-105"
+                    transform="translate(620, 480)"
+                    onClick={() => setActiveHotspot(activeHotspot === 'smog' ? null : 'smog')}
+                  >
+                    <circle cx="0" cy="0" r={88 + simTick * 5} fill="url(#dangerRadial)" />
+                    <circle cx="0" cy="0" r="50" fill="none" stroke="#ff5252" strokeWidth="1.8" strokeDasharray="4 4">
+                      <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="20s" repeatCount="indefinite" />
+                    </circle>
+                    <circle cx="0" cy="0" r="16" fill="#d32f2f" stroke="#ffffff" strokeWidth="2" />
+                    <text x="0" y="5" fill="#ffffff" fontSize="12" fontFamily="'JetBrains Mono'" fontWeight="bold" textAnchor="middle">!</text>
+                    <g transform="translate(22, -28)">
+                      <rect width="135" height="26" rx="8" fill="#1e1011" stroke="#ff5252" strokeWidth="1.5" />
+                      <circle cx="12" cy="13" r="4.5" fill="#ff5252" />
+                      <text x="24" y="17" fill="#ffb4ab" fontSize="10" fontFamily="'JetBrains Mono'" fontWeight="bold">SMOG 88.4 µg</text>
+                    </g>
+                  </g>
+                )}
+
+                {/* 6. Heat Island Hotspot */}
+                {layers.heat && (
+                  <g
+                    className="cursor-pointer transition-transform hover:scale-105"
+                    transform="translate(480, 240)"
+                    onClick={() => setActiveHotspot(activeHotspot === 'heat' ? null : 'heat')}
+                  >
+                    <circle cx="0" cy="0" r="70" fill="url(#thermalRadial)" />
+                    <circle cx="0" cy="0" r="14" fill="#e65100" stroke="#ffe0b2" strokeWidth="2" />
+                    <text x="0" y="4" fill="#ffffff" fontSize="11" fontFamily="'JetBrains Mono'" fontWeight="bold" textAnchor="middle">☀</text>
+                    <g transform="translate(-115, -26)">
+                      <rect width="105" height="24" rx="8" fill="#1f180e" stroke="#ffb74d" strokeWidth="1.5" />
+                      <circle cx="12" cy="12" r="4" fill="#ffa726" />
+                      <text x="22" y="16" fill="#ffe082" fontSize="10" fontFamily="'JetBrains Mono'" fontWeight="bold">HEAT 38.2°C</text>
+                    </g>
+                  </g>
+                )}
+
+                {/* 7. Route A (Direct Arterial - Orange/Red) */}
+                <g
+                  opacity={selectedRoute === 'A' ? 1 : 0.65}
+                  className="cursor-pointer"
+                  onClick={() => setSelectedRoute('A')}
+                >
+                  <path
+                    d="M 830 630 L 680 500 L 520 400 L 360 260 L 240 140"
+                    fill="none"
+                    stroke="#ff7043"
+                    strokeWidth={selectedRoute === 'A' ? '7' : '4.5'}
+                    strokeDasharray="8 6"
+                    strokeLinecap="round"
+                  >
+                    <animate attributeName="stroke-dashoffset" values="28;0" dur="2s" repeatCount="indefinite" />
+                  </path>
+                  <g transform="translate(540, 420)">
+                    <rect width="88" height="24" rx="8" fill="#23130d" stroke="#ff7043" strokeWidth="1.5" />
+                    <text x="9" y="16" fill="#ffab91" fontSize="10" fontFamily="'JetBrains Mono'" fontWeight="bold">18m • AQI 79</text>
+                  </g>
+                </g>
+
+                {/* 8. Route C (Suburban Ring - Yellow) */}
+                <g
+                  opacity={selectedRoute === 'C' ? 1 : 0.65}
+                  className="cursor-pointer"
+                  onClick={() => setSelectedRoute('C')}
+                >
+                  <path
+                    d="M 830 630 L 800 480 L 640 360 L 460 320 L 240 140"
+                    fill="none"
+                    stroke="#fbc02d"
+                    strokeWidth={selectedRoute === 'C' ? '7' : '4'}
+                    strokeDasharray="5 5"
+                    strokeLinecap="round"
+                  />
+                  <g transform="translate(660, 340)">
+                    <rect width="88" height="24" rx="8" fill="#221e0d" stroke="#fbc02d" strokeWidth="1.5" />
+                    <text x="9" y="16" fill="#fff59d" fontSize="10" fontFamily="'JetBrains Mono'" fontWeight="bold">20m • AQI 54</text>
+                  </g>
+                </g>
+
+                {/* 9. Route B (Recommended Canopy Greenway - Emerald Glow) */}
+                <g
+                  filter="url(#glowClean)"
+                  opacity={selectedRoute === 'B' ? 1 : 0.75}
+                  className="cursor-pointer"
+                  onClick={() => setSelectedRoute('B')}
+                >
+                  <path
+                    d="M 830 630 L 760 520 L 610 520 L 500 440 L 410 310 L 320 220 L 240 140"
+                    fill="none"
+                    stroke="#003921"
+                    strokeWidth={selectedRoute === 'B' ? '18' : '12'}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="M 830 630 L 760 520 L 610 520 L 500 440 L 410 310 L 320 220 L 240 140"
+                    fill="none"
+                    stroke="#00C982"
+                    strokeWidth={selectedRoute === 'B' ? '8' : '5'}
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  />
+                  <path
+                    d="M 830 630 L 760 520 L 610 520 L 500 440 L 410 310 L 320 220 L 240 140"
+                    fill="none"
+                    stroke="#ffffff"
+                    strokeWidth="3"
+                    strokeDasharray="2 20"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    opacity="0.9"
+                  >
+                    <animate attributeName="stroke-dashoffset" values="88;0" dur="2.2s" repeatCount="indefinite" />
+                  </path>
+                </g>
+
+                {/* Badges on Route B */}
+                <g transform="translate(435, 360)">
+                  <rect width="126" height="26" rx="10" fill="#05261d" stroke="#00C982" strokeWidth="1.5" />
+                  <circle cx="13" cy="13" r="4" fill="#00C982" />
+                  <text x="25" y="17" fill="#a7f3d0" fontSize="10" fontFamily="'JetBrains Mono'" fontWeight="bold">🌿 CLEAN CORRIDOR</text>
+                </g>
+
+                <g transform="translate(320, 255)">
+                  <rect width="102" height="24" rx="9" fill="#05261d" stroke="#00C982" strokeWidth="1.2" />
+                  <text x="12" y="16" fill="#00C982" fontSize="9.5" fontFamily="'JetBrains Mono'" fontWeight="bold">84% CANOPY</text>
+                </g>
+
+                {/* 10. Origin Marker (Home - Indiranagar 100ft) */}
+                <g transform="translate(830, 630)">
+                  <circle cx="0" cy="0" r="26" fill="none" stroke="#00C982" strokeWidth="1.8" opacity="0.6">
+                    <animate attributeName="r" values="8;36" dur="2.2s" repeatCount="indefinite" />
+                    <animate attributeName="opacity" values="0.8;0" dur="2.2s" repeatCount="indefinite" />
+                  </circle>
+                  <circle cx="0" cy="0" r="10" fill="#00C982" stroke="#05100e" strokeWidth="3" />
+                  <g transform="translate(-75, -46)">
+                    <rect width="150" height="34" rx="10" fill="#101c1a" stroke="#00C982" strokeWidth="1.8" />
+                    <path d="M 75 34 L 75 42" stroke="#00C982" strokeWidth="2" />
+                    <circle cx="16" cy="17" r="5" fill="#00C982" />
+                    <text x="28" y="16" fill="#ffffff" fontSize="11" fontFamily="'Inter'" fontWeight="bold">HOME ORIGIN</text>
+                    <text x="28" y="27" fill="#8fa39a" fontSize="9" fontFamily="'JetBrains Mono'">Indiranagar 100ft</text>
+                  </g>
+                </g>
+
+                {/* 11. Destination Marker (Campus - IISc Bangalore) */}
+                <g transform="translate(240, 140)">
+                  <circle cx="0" cy="0" r="12" fill="#4be2c8" stroke="#05100e" strokeWidth="3" />
+                  <circle cx="0" cy="0" r="4.5" fill="#05100e" />
+                  <g transform="translate(-70, -46)">
+                    <rect width="140" height="34" rx="10" fill="#101c1a" stroke="#4be2c8" strokeWidth="1.8" />
+                    <path d="M 70 34 L 70 42" stroke="#4be2c8" strokeWidth="2" />
+                    <text x="14" y="21" fill="#4be2c8" fontSize="13">★</text>
+                    <text x="30" y="16" fill="#ffffff" fontSize="11" fontFamily="'Inter'" fontWeight="bold">CAMPUS</text>
+                    <text x="30" y="27" fill="#4be2c8" fontSize="9" fontFamily="'JetBrains Mono'">IISc Bangalore</text>
+                  </g>
+                </g>
+              </svg>
+
+              {/* Map Layer Controls Top-Left */}
+              <div className="absolute top-4 left-4 flex flex-wrap gap-1.5 z-10">
+                <button
+                  onClick={() => setLayers(prev => ({ ...prev, pm25: !prev.pm25 }))}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    layers.pm25
+                      ? 'bg-primary text-[#002b18] shadow-[0_2px_0_#007a4e]'
+                      : 'bg-surface-container-low/90 backdrop-blur-md hover:bg-surface-container text-on-surface-variant border border-outline-variant/60'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[15px]">air</span>
+                  PM2.5 LIVE
+                </button>
+                <button
+                  onClick={() => setLayers(prev => ({ ...prev, canopy: !prev.canopy }))}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-mono flex items-center gap-1.5 transition-all cursor-pointer ${
+                    layers.canopy
+                      ? 'bg-primary text-[#002b18] font-bold shadow-[0_2px_0_#007a4e]'
+                      : 'bg-surface-container-low/90 backdrop-blur-md hover:bg-surface-container text-on-surface-variant border border-outline-variant/60'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[15px]">forest</span>
+                  CANOPY
+                </button>
+                <button
+                  onClick={() => setLayers(prev => ({ ...prev, heat: !prev.heat }))}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-mono flex items-center gap-1.5 transition-all cursor-pointer ${
+                    layers.heat
+                      ? 'bg-primary text-[#002b18] font-bold shadow-[0_2px_0_#007a4e]'
+                      : 'bg-surface-container-low/90 backdrop-blur-md hover:bg-surface-container text-on-surface-variant border border-outline-variant/60'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-[15px]">thermostat</span>
+                  HEAT MESH
+                </button>
+              </div>
+
+              {/* Interactive Hotspot Inspector Dialog */}
+              {activeHotspot && (
+                <div className="absolute top-16 left-4 bg-surface-container-low/95 backdrop-blur-md p-4 rounded-2xl border-2 border-primary shadow-[0_8px_32px_rgba(0,0,0,0.8)] max-w-sm z-30 animate-in fade-in zoom-in-95 duration-200">
+                  <div className="flex items-center justify-between pb-2 border-b border-outline-variant/50">
+                    <span className="text-xs font-mono font-bold text-primary flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[16px]">sensors</span>
+                      {activeHotspot === 'smog' ? 'MAGADI ROAD CORRIDOR' : 'CENTRAL JUNCTION HEAT DOME'}
+                    </span>
+                    <button
+                      onClick={() => setActiveHotspot(null)}
+                      className="text-on-surface-variant hover:text-white text-xs px-1"
                     >
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                      <XAxis dataKey="time" tick={{ fill: '#64748b', fontSize: 11 }} />
-                      <YAxis tick={{ fill: '#64748b', fontSize: 11 }} domain={[0, 100]} />
-                      <Tooltip content={<CustomTooltip />} />
-                      <Bar dataKey="exposure" name="Exposure Score" radius={[4, 4, 0, 0]}
-                        fill="#3b82f6"
-                        label={{ position: 'top', fontSize: 11, fill: '#94a3b8' }}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
+                      ✕
+                    </button>
+                  </div>
+                  <div className="mt-2 text-xs text-white">
+                    {activeHotspot === 'smog' ? (
+                      <>
+                        <div className="grid grid-cols-2 gap-2 my-2 font-mono">
+                          <div className="bg-surface-container p-2 rounded-lg">
+                            <span className="text-[10px] text-on-surface-variant block">PM2.5 CONC</span>
+                            <span className="text-sm font-bold text-[#ff6b6b]">88.4 µg/m³</span>
+                          </div>
+                          <div className="bg-surface-container p-2 rounded-lg">
+                            <span className="text-[10px] text-on-surface-variant block">SURFACE TEMP</span>
+                            <span className="text-sm font-bold text-white">34.2°C</span>
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-on-surface-variant mt-1">
+                          Severe particulate stagnation from diesel commercial vehicles. Route B detours around this zone to reduce pulmonary exposure by 60%.
+                        </p>
+                      </>
+                    ) : (
+                      <>
+                        <div className="grid grid-cols-2 gap-2 my-2 font-mono">
+                          <div className="bg-surface-container p-2 rounded-lg">
+                            <span className="text-[10px] text-on-surface-variant block">SURFACE HEAT</span>
+                            <span className="text-sm font-bold text-[#ffb74d]">38.2°C</span>
+                          </div>
+                          <div className="bg-surface-container p-2 rounded-lg">
+                            <span className="text-[10px] text-on-surface-variant block">UV INDEX</span>
+                            <span className="text-sm font-bold text-white">7 High</span>
+                          </div>
+                        </div>
+                        <p className="text-[11px] text-on-surface-variant mt-1">
+                          Unshaded asphalt reflection causing localized thermal pocket. Shaded corridor provides -4.2°C ambient cooling.
+                        </p>
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
+              )}
 
-              {/* Recommendation callout */}
-              <div className="glass-card p-5 border-eco-500/25 mb-6">
-                <div className="flex items-start gap-4">
-                  <div className="w-12 h-12 rounded-xl bg-eco-500/15 border border-eco-500/25 flex items-center justify-center flex-shrink-0">
-                    <TrendingDown size={22} className="text-eco-400" />
+              {/* Floating Alert Card Bottom-Left */}
+              <div className="absolute bottom-4 left-4 bg-surface-container-low/95 backdrop-blur-md p-3.5 rounded-2xl border-2 border-[#ff6b6b] shadow-[0_8px_24px_rgba(0,0,0,0.6)] max-w-xs z-10">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2.5 h-2.5 rounded-full bg-[#ff6b6b] animate-ping" />
+                    <span className="text-[11px] font-mono font-bold text-[#ff6b6b] uppercase">AIR QUALITY ALERT</span>
+                  </div>
+                  <span className="text-[10px] font-mono text-on-surface-variant">SENSOR #09</span>
+                </div>
+                <div className="text-xs font-bold text-white mt-1">Magadi Road / MG Intersection</div>
+                <div className="grid grid-cols-3 gap-2 mt-2 pt-2 border-t border-outline-variant/50 text-center font-mono">
+                  <div>
+                    <span className="text-[9px] text-on-surface-variant block">PM2.5</span>
+                    <span className="text-xs font-bold text-[#ff6b6b]">88.4 µg</span>
                   </div>
                   <div>
-                    <h3 className="font-semibold text-slate-100 mb-1">AI Recommendation</h3>
-                    <p className="text-slate-300">
-                      <span className="text-eco-400 font-semibold">Leaving at 4:00 PM</span> may reduce
-                      estimated environmental exposure by <span className="text-eco-400 font-semibold">33%</span>
-                      {' '}(from exposure score 72 → 48).
-                    </p>
-                    <p className="text-xs text-slate-500 mt-2 flex items-center gap-1">
-                      <Info size={11} />
-                      Prediction based on historical PM2.5 patterns. Actual conditions may vary.
-                    </p>
+                    <span className="text-[9px] text-on-surface-variant block">AQI</span>
+                    <span className="text-xs font-bold text-[#ff6b6b]">168 POOR</span>
+                  </div>
+                  <div>
+                    <span className="text-[9px] text-on-surface-variant block">FLOW</span>
+                    <span className="text-xs font-bold text-white">JAM</span>
                   </div>
                 </div>
               </div>
 
-              {/* SageMaker model info */}
-              <div className="glass-card p-5">
-                <h3 className="font-semibold text-slate-100 mb-4 text-sm flex items-center gap-2">
-                  <Server size={14} className="text-orange-400" />
-                  SageMaker Model Architecture
-                </h3>
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="bg-dark-600 rounded-xl p-3 text-center">
-                    <p className="text-xs text-slate-500 mb-1">Model Type</p>
-                    <p className="text-sm font-semibold text-slate-200">XGBoost Regression</p>
-                  </div>
-                  <div className="bg-dark-600 rounded-xl p-3 text-center">
-                    <p className="text-xs text-slate-500 mb-1">Features</p>
-                    <p className="text-sm font-semibold text-slate-200">Hour, Day, Temp, Historical PM2.5</p>
-                  </div>
-                  <div className="bg-dark-600 rounded-xl p-3 text-center">
-                    <p className="text-xs text-slate-500 mb-1">Output</p>
-                    <p className="text-sm font-semibold text-slate-200">Predicted PM2.5 µg/m³</p>
-                  </div>
-                </div>
-                <div className="mt-3 bg-dark-600 rounded-xl p-3">
-                  <p className="text-xs text-slate-500 mb-1">Artifact location</p>
-                  <code className="text-xs text-eco-400 font-mono">s3://ecoroute-ai-data/models/pm25-forecast-v1/</code>
-                </div>
+              {/* Floating Zoom Controls Bottom-Right */}
+              <div className="absolute bottom-4 right-4 flex flex-col gap-2 z-10">
+                <button
+                  title="Zoom In"
+                  className="w-10 h-10 rounded-xl bg-surface-container-low/90 backdrop-blur-md text-white border border-outline-variant/60 flex items-center justify-center hover:bg-surface-container active:scale-95 transition-all shadow-md cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[20px]">add</span>
+                </button>
+                <button
+                  title="Zoom Out"
+                  className="w-10 h-10 rounded-xl bg-surface-container-low/90 backdrop-blur-md text-white border border-outline-variant/60 flex items-center justify-center hover:bg-surface-container active:scale-95 transition-all shadow-md cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[20px]">remove</span>
+                </button>
+                <button
+                  title="Locate Route"
+                  className="w-10 h-10 rounded-xl bg-surface-container-low/90 backdrop-blur-md text-primary border border-outline-variant/60 flex items-center justify-center hover:bg-surface-container active:scale-95 transition-all shadow-md cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[20px]">my_location</span>
+                </button>
               </div>
-
-              <button
-                onClick={() => goToStep('aws')}
-                className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-700/60 hover:bg-slate-700 text-slate-300 text-sm font-medium transition-colors"
-              >
-                Next: AWS Architecture <ChevronRight size={14} />
-              </button>
             </div>
-          </div>
-        )}
 
-        {/* ── AWS ── */}
-        {activeStep === 'aws' && (
-          <div className="h-full overflow-y-auto px-6 py-6">
-            <div className="max-w-4xl mx-auto">
-              <div className="text-center mb-8">
-                <h2 className="text-2xl font-display font-bold text-slate-100 mb-1">AWS Architecture</h2>
-                <p className="text-sm text-slate-500">Real AWS services powering EcoRoute AI</p>
-              </div>
-
-              {/* Architecture diagram */}
-              <div className="glass-card p-6 mb-6">
-                <div className="flex items-center justify-center gap-3 flex-wrap">
-                  {[
-                    { label: 'Frontend', color: '#3b82f6', icon: <Activity size={16} /> },
-                    { label: '→', color: '#475569', icon: null },
-                    { label: 'API Gateway', color: '#8b5cf6', icon: <Zap size={16} /> },
-                    { label: '→', color: '#475569', icon: null },
-                    { label: 'Lambda', color: '#f59e0b', icon: <Server size={16} /> },
-                    { label: '→', color: '#475569', icon: null },
-                    { label: 'DynamoDB', color: '#22c55e', icon: <Database size={16} /> },
-                    { label: '+', color: '#475569', icon: null },
-                    { label: 'S3', color: '#f97316', icon: <Cloud size={16} /> },
-                    { label: '+', color: '#475569', icon: null },
-                    { label: 'SageMaker', color: '#06b6d4', icon: <Activity size={16} /> },
-                  ].map((item, i) => (
-                    <div key={i} className="flex items-center">
-                      {item.icon ? (
-                        <div
-                          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-300"
-                          style={{
-                            background: `${item.color}20`,
-                            border: `1px solid ${item.color}40`,
-                            color: item.color,
-                            opacity: awsAnimating ? (awsActiveIdx >= i / 2 ? 1 : 0.3) : 1,
-                          }}
-                        >
-                          {item.icon}
-                          {item.label}
-                        </div>
-                      ) : (
-                        <span className="text-slate-600 mx-1 text-sm font-bold">{item.label}</span>
-                      )}
+            {/* ── RIGHT PANEL (RECOMMENDATIONS & COMPARISONS) ── */}
+            <aside className="w-full lg:w-[410px] xl:w-[430px] shrink-0 p-4 bg-surface-container-low border-l border-outline-variant/60 flex flex-col justify-between gap-3.5 z-20 overflow-y-auto max-h-[calc(100vh-6.5rem)]">
+              <div className="flex flex-col gap-3.5">
+                {/* 1. RECOMMENDED ROUTE CARD */}
+                <div className="bg-surface-container rounded-2xl p-4 border-2 border-primary shadow-[0_6px_20px_rgba(0,201,130,0.15)] relative overflow-hidden">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-primary text-[#002b18] text-xs font-mono font-bold shadow-sm">
+                      <span className="material-symbols-outlined text-[15px] font-bold">verified</span>
+                      RECOMMENDED
                     </div>
-                  ))}
-                </div>
-              </div>
+                    <span className="text-[11px] font-mono font-bold text-primary">ROUTE B • ECO-OPTIMAL</span>
+                  </div>
 
-              {/* Service cards */}
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-                {DEMO_AWS_SERVICES.map((svc, i) => (
-                  <div
-                    key={svc.name}
-                    className="glass-card p-4 transition-all duration-500"
-                    style={{
-                      opacity: awsAnimating ? (awsActiveIdx >= i ? 1 : 0.2) : 1,
-                      transform: awsAnimating && awsActiveIdx === i ? 'scale(1.02)' : 'scale(1)',
-                      borderColor: awsActiveIdx === i ? '#22c55e60' : '',
-                    }}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-bold text-slate-300">{svc.name}</span>
-                      <span className={`text-xs px-1.5 py-0.5 rounded font-semibold ${
-                        svc.status === 'active' ? 'bg-eco-500/20 text-eco-400' :
-                        svc.status === 'fallback' ? 'bg-yellow-500/20 text-yellow-400' :
-                        'bg-slate-700 text-slate-500'
-                      }`}>
-                        {svc.status}
+                  <div className="flex items-center gap-4 my-3">
+                    {/* Semi-circular Exposure Gauge */}
+                    <div className="relative w-28 h-20 flex items-center justify-center shrink-0">
+                      <svg className="w-28 h-20" viewBox="0 0 100 65">
+                        <path d="M 12 55 A 38 38 0 0 1 88 55" fill="none" stroke="#1b2e29" strokeWidth="8" strokeLinecap="round" />
+                        <path
+                          d="M 12 55 A 38 38 0 0 1 88 55"
+                          fill="none"
+                          stroke={routeDetails[selectedRoute].color}
+                          strokeWidth="8"
+                          strokeLinecap="round"
+                          strokeDasharray="120"
+                          strokeDashoffset={120 - (routeDetails[selectedRoute].exposure / 100) * 120}
+                        />
+                        <line
+                          x1="50"
+                          y1="52"
+                          x2={selectedRoute === 'B' ? '35' : selectedRoute === 'C' ? '50' : '65'}
+                          y2={selectedRoute === 'B' ? '28' : selectedRoute === 'C' ? '24' : '28'}
+                          stroke="#ffffff"
+                          strokeWidth="2.5"
+                          strokeLinecap="round"
+                        />
+                        <circle cx="50" cy="52" r="4" fill={routeDetails[selectedRoute].color} />
+                      </svg>
+                      <div className="absolute bottom-0 text-center">
+                        <span className="text-xl font-bold font-mono text-primary leading-none block">
+                          {routeDetails[selectedRoute].exposure}
+                        </span>
+                        <span className="text-[9px] font-mono text-on-surface-variant">EXPOSURE</span>
+                      </div>
+                    </div>
+
+                    <div className="flex-1 min-w-0">
+                      <span className="text-base font-bold text-white block truncate">
+                        {routeDetails[selectedRoute].type}
+                      </span>
+                      <div className="flex items-center gap-1 text-primary text-xs font-bold font-mono mt-0.5">
+                        <span className="material-symbols-outlined text-[16px]">trending_down</span>
+                        {selectedRoute === 'B' ? '60% LOWER DOSE' : selectedRoute === 'C' ? '25% LOWER DOSE' : 'FASTEST SPEED'}
+                      </div>
+                      <span className="text-[11px] text-on-surface-variant block mt-1 leading-snug">
+                        {routeDetails[selectedRoute].desc}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-500">{svc.detail}</p>
                   </div>
-                ))}
+
+                  {/* 3 Metrics */}
+                  <div className="grid grid-cols-3 gap-2 pt-2 border-t border-outline-variant/60">
+                    <div className="bg-surface-container-lowest p-2 rounded-xl text-center">
+                      <span className="text-[9px] font-mono text-on-surface-variant block">TIME</span>
+                      <span className="text-sm font-bold font-mono text-white">{routeDetails[selectedRoute].time} min</span>
+                      <span className="text-[9px] font-mono text-[#4be2c8] block">+4m Detour</span>
+                    </div>
+                    <div className="bg-surface-container-lowest p-2 rounded-xl text-center">
+                      <span className="text-[9px] font-mono text-on-surface-variant block">AVG PM2.5</span>
+                      <span className="text-sm font-bold font-mono text-primary">{routeDetails[selectedRoute].pm25}</span>
+                      <span className="text-[9px] font-mono text-primary block">WHO Standard</span>
+                    </div>
+                    <div className="bg-surface-container-lowest p-2 rounded-xl text-center">
+                      <span className="text-[9px] font-mono text-on-surface-variant block">SHADE</span>
+                      <span className="text-sm font-bold font-mono text-white">{routeDetails[selectedRoute].shade}</span>
+                      <span className="text-[9px] font-mono text-[#ffb74d] block">{routeDetails[selectedRoute].temp} Cool</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. COMPARE ROUTE PROPOSALS */}
+                <div className="flex flex-col gap-2">
+                  <span className="text-[11px] font-mono font-bold tracking-wider uppercase text-on-surface-variant">
+                    COMPARE ROUTE PROPOSALS
+                  </span>
+
+                  {/* Route B */}
+                  <div
+                    onClick={() => setSelectedRoute('B')}
+                    className={`p-3 rounded-2xl cursor-pointer transition-all ${
+                      selectedRoute === 'B'
+                        ? 'bg-surface-container border-2 border-primary shadow-sm'
+                        : 'bg-surface-container-lowest border border-outline-variant/50 hover:border-primary/60'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-3 h-3 rounded-full bg-primary shadow-[0_0_8px_#00C982]" />
+                        <span className="text-xs font-bold text-white">Route B (Canopy Greenway)</span>
+                      </div>
+                      <span className="text-[10px] font-mono font-bold text-primary bg-primary/20 px-2 py-0.5 rounded-full">
+                        ACTIVE
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 mt-2 text-[11px] font-mono text-on-surface-variant">
+                      <div>Time: <strong className="text-white">{Math.round(22 * modeMultiplier)}m</strong></div>
+                      <div>PM: <strong className="text-primary font-bold">12.1 µg</strong></div>
+                      <div className="text-right">Risk: <strong className="text-primary">Low</strong></div>
+                    </div>
+                  </div>
+
+                  {/* Route A */}
+                  <div
+                    onClick={() => setSelectedRoute('A')}
+                    className={`p-3 rounded-2xl cursor-pointer transition-all ${
+                      selectedRoute === 'A'
+                        ? 'bg-surface-container border-2 border-[#ff6b6b] shadow-sm'
+                        : 'bg-surface-container-lowest border border-outline-variant/50 hover:border-[#ff6b6b]/60'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-3 h-3 rounded-full bg-[#ff6b6b]" />
+                        <span className="text-xs font-bold text-white">Route A (Direct Arterial)</span>
+                      </div>
+                      <span className="text-[10px] font-mono font-bold text-[#ff6b6b] bg-[#ff6b6b]/20 px-2 py-0.5 rounded-full">
+                        FASTEST
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 mt-2 text-[11px] font-mono text-on-surface-variant">
+                      <div>Time: <strong className="text-white">{Math.round(18 * modeMultiplier)}m</strong></div>
+                      <div>PM: <strong className="text-[#ff6b6b] font-bold">48.6 µg</strong></div>
+                      <div className="text-right">Risk: <strong className="text-[#ff6b6b]">High</strong></div>
+                    </div>
+                  </div>
+
+                  {/* Route C */}
+                  <div
+                    onClick={() => setSelectedRoute('C')}
+                    className={`p-3 rounded-2xl cursor-pointer transition-all ${
+                      selectedRoute === 'C'
+                        ? 'bg-surface-container border-2 border-[#fbc02d] shadow-sm'
+                        : 'bg-surface-container-lowest border border-outline-variant/50 hover:border-[#fbc02d]/60'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="w-3 h-3 rounded-full bg-[#fbc02d]" />
+                        <span className="text-xs font-bold text-white">Route C (Suburban Ring)</span>
+                      </div>
+                      <span className="text-[10px] font-mono text-on-surface-variant">BALANCED</span>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 mt-2 text-[11px] font-mono text-on-surface-variant">
+                      <div>Time: <strong className="text-white">{Math.round(20 * modeMultiplier)}m</strong></div>
+                      <div>PM: <strong className="text-white">28.4 µg</strong></div>
+                      <div className="text-right">Risk: <strong className="text-[#fbc02d]">Med</strong></div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. AVOIDED EXPOSURE TELEMETRY */}
+                <div className="bg-surface-container rounded-2xl p-3 border border-outline-variant/60 flex flex-col gap-1.5 text-xs font-mono">
+                  <div className="flex items-center justify-between">
+                    <span className="text-on-surface-variant flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-primary text-[15px]">masks</span>
+                      Inhalation Avoided:
+                    </span>
+                    <span className="text-primary font-bold">-36.5 µg PM2.5</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-on-surface-variant flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-[#4be2c8] text-[15px]">device_thermostat</span>
+                      Thermal Relief:
+                    </span>
+                    <span className="text-[#4be2c8] font-bold">-4.2°C Surface</span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-on-surface-variant flex items-center gap-1.5">
+                      <span className="material-symbols-outlined text-primary text-[15px]">park</span>
+                      Tree Canopy:
+                    </span>
+                    <span className="text-primary font-bold">4.8 km / 6.1 km</span>
+                  </div>
+                </div>
               </div>
 
-              {/* S3 structure */}
-              <div className="glass-card p-5 mb-4">
-                <h3 className="font-semibold text-slate-100 mb-3 text-sm flex items-center gap-2">
-                  <Cloud size={14} className="text-orange-400" />
-                  S3 Data Structure
-                </h3>
-                <div className="font-mono text-xs space-y-1">
-                  {[
-                    { path: 's3://ecoroute-ai-data/raw/', desc: 'CPCB/OpenAQ raw data feeds' },
-                    { path: 's3://ecoroute-ai-data/processed/', desc: 'Cleaned, geo-enriched datasets' },
-                    { path: 's3://ecoroute-ai-data/models/', desc: 'SageMaker model artifacts' },
-                    { path: 's3://ecoroute-ai-data/demo/', desc: 'Competition demo datasets' },
-                  ].map(({ path, desc }) => (
-                    <div key={path} className="flex items-center gap-3 py-1 border-b border-slate-800/40">
-                      <span className="text-eco-400 flex-shrink-0">{path}</span>
-                      <span className="text-slate-500">— {desc}</span>
-                    </div>
-                  ))}
+              {/* ACTION BUTTONS */}
+              <div className="flex flex-col gap-2 pt-2">
+                <button
+                  onClick={() => setGuidanceActive(!guidanceActive)}
+                  className="w-full py-3.5 px-4 rounded-2xl bg-primary text-[#002b18] font-bold text-sm tracking-wide shadow-[0_4px_0_#007a4e] hover:brightness-105 active:translate-y-1 active:shadow-[0_1px_0_#007a4e] transition-all flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[20px] font-bold">navigation</span>
+                  {guidanceActive ? 'LIVE GUIDANCE ENGAGED • TURN-BY-TURN' : 'START LIVE GUIDANCE'}
+                </button>
+                <button
+                  onClick={handleSimulate}
+                  className="w-full py-2.5 px-4 rounded-xl bg-surface-container border border-outline-variant/60 text-white hover:bg-surface-container-high font-mono text-xs font-semibold flex items-center justify-center gap-2 transition-all cursor-pointer"
+                >
+                  <span className="material-symbols-outlined text-[#4be2c8] text-[16px]">science</span>
+                  {simulationRunning ? 'SIMULATING PM2.5 SHIFT (+60m)...' : 'SIMULATE POLLUTION EVOLUTION'}
+                </button>
+              </div>
+            </aside>
+          </div>
+        )}
+
+        {/* ─── 4. STEP: OVERVIEW (HERO ILLUSTRATION & PROBLEM) ─── */}
+        {activeStep === 'intro' && (
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[#071311] relative overflow-hidden">
+            <div className="max-w-3xl z-10">
+              <div className="w-16 h-16 rounded-2xl bg-primary flex items-center justify-center mx-auto mb-5 shadow-[0_4px_0_#007a4e,0_10px_25px_rgba(0,201,130,0.3)]">
+                <span className="material-symbols-outlined text-[#002b18] text-[32px] font-bold">eco</span>
+              </div>
+              <h1 className="text-4xl md:text-5xl font-headline font-extrabold text-white tracking-tight mb-3">
+                EcoRoute <span className="text-primary">AI</span>
+              </h1>
+              <p className="text-lg md:text-xl text-on-surface-variant font-mono mb-8">
+                Navigate smarter. Breathe better.
+              </p>
+
+              {/* Illustrated 2D Map Card */}
+              <div className="bg-surface-container-low rounded-3xl p-6 border-2 border-outline-variant shadow-[0_12px_40px_rgba(0,0,0,0.5)] mb-8 text-left relative overflow-hidden">
+                <p className="text-lg text-white font-medium mb-2">
+                  "Navigation tells us how fast we can get there."
+                </p>
+                <p className="text-sm text-on-surface-variant mb-6">
+                  Standard routing engines treat all streets the same — ignoring air pollution, PM2.5 concentration, and urban heat islands that damage long-term respiratory health.
+                </p>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="bg-surface-container rounded-2xl p-4 border border-outline-variant flex flex-col items-center text-center">
+                    <span className="material-symbols-outlined text-[#ff7043] text-[28px] mb-2">air</span>
+                    <span className="text-sm font-bold text-white">Air Pollution</span>
+                    <span className="text-xs font-mono text-on-surface-variant mt-1">PM2.5 · PM10 · AQI</span>
+                  </div>
+                  <div className="bg-surface-container rounded-2xl p-4 border border-outline-variant flex flex-col items-center text-center">
+                    <span className="material-symbols-outlined text-[#ffb74d] text-[28px] mb-2">thermostat</span>
+                    <span className="text-sm font-bold text-white">Heat Exposure</span>
+                    <span className="text-xs font-mono text-on-surface-variant mt-1">Direct UV · Ambient Temp</span>
+                  </div>
+                  <div className="bg-surface-container rounded-2xl p-4 border border-outline-variant flex flex-col items-center text-center">
+                    <span className="material-symbols-outlined text-primary text-[28px] mb-2">park</span>
+                    <span className="text-sm font-bold text-white">Canopy Shield</span>
+                    <span className="text-xs font-mono text-on-surface-variant mt-1">84% Shaded Greenways</span>
+                  </div>
                 </div>
               </div>
 
               <button
-                onClick={() => goToStep('impact')}
-                className="w-full flex items-center justify-center gap-2 py-2.5 rounded-xl bg-slate-700/60 hover:bg-slate-700 text-slate-300 text-sm font-medium transition-colors"
+                onClick={() => setActiveStep('routes')}
+                className="py-4 px-8 rounded-2xl bg-primary text-[#002b18] font-bold text-base shadow-[0_4px_0_#007a4e,0_12px_24px_rgba(0,201,130,0.3)] hover:brightness-105 active:translate-y-1 active:shadow-[0_1px_0_#007a4e] transition-all cursor-pointer inline-flex items-center gap-2"
               >
-                Next: Impact <ChevronRight size={14} />
+                START ROUTE DEMONSTRATION →
               </button>
             </div>
           </div>
         )}
 
-        {/* ── IMPACT ── */}
-        {activeStep === 'impact' && (
-          <div className="h-full flex flex-col items-center justify-center px-8 text-center bg-animated">
-            <div className="max-w-2xl">
-              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-eco-500 to-teal-500 flex items-center justify-center mx-auto mb-6 glow-eco float-particle">
-                <Wind size={36} className="text-white" />
-              </div>
+        {/* ─── 5. STEP: ONLY ROUTE SCENARIO ─── */}
+        {activeStep === 'only-route' && (
+          <div className="flex-1 flex flex-col lg:flex-row bg-[#071311] overflow-hidden min-h-[700px]">
+            {/* Map View focused on the single route */}
+            <div className="flex-1 relative p-6 flex flex-col justify-center items-center">
+              <div className="w-full max-w-2xl bg-surface-container-low rounded-3xl p-6 border-2 border-[#ff6b6b] shadow-[0_8px_32px_rgba(255,107,107,0.2)]">
+                <div className="flex items-center justify-between pb-3 border-b border-outline-variant/60">
+                  <div className="flex items-center gap-2">
+                    <span className="material-symbols-outlined text-[#ff6b6b] text-[22px]">warning</span>
+                    <span className="text-sm font-mono font-bold text-[#ff6b6b]">⚠ ONLY PRACTICAL ROUTE SCENARIO</span>
+                  </div>
+                  <span className="text-xs font-mono text-on-surface-variant">Magadi Rd Arterial</span>
+                </div>
+                <p className="text-sm text-white mt-4">
+                  When infrastructure geography allows only one viable corridor, EcoRoute AI shifts from <strong>route selection</strong> to <strong>departure timing optimization</strong>.
+                </p>
 
-              <h1 className="text-5xl font-display font-bold text-gradient mb-6 leading-tight">
-                Don't just find the<br />fastest way there.
-              </h1>
-
-              <p className="text-2xl text-slate-200 mb-4 font-light">
-                Find a <span className="text-eco-400 font-semibold">better</span> way there.
-              </p>
-
-              <div className="glass-card p-6 mb-8">
-                <div className="grid grid-cols-3 gap-6">
+                {/* Departure Time Bars */}
+                <div className="mt-6 flex flex-col gap-3 font-mono">
+                  <div className="text-xs font-bold text-on-surface-variant uppercase">DEPARTURE TIME EXPOSURE CURVE</div>
                   {[
-                    { value: '60%', label: 'Lower exposure', sub: 'vs fastest route', color: '#22c55e' },
-                    { value: '33%', label: 'Reduced via', sub: 'departure time', color: '#06b6d4' },
-                    { value: '3', label: 'Routes analyzed', sub: 'with AI scoring', color: '#f59e0b' },
-                  ].map(({ value, label, sub, color }) => (
-                    <div key={label} className="text-center">
-                      <div className="text-4xl font-bold mb-1" style={{ color }}>{value}</div>
-                      <div className="text-sm font-semibold text-slate-200">{label}</div>
-                      <div className="text-xs text-slate-500">{sub}</div>
+                    { time: '3:00 PM', exp: 72, width: '95%', color: '#ff6b6b', label: 'Heavy Stagnation' },
+                    { time: '3:30 PM', exp: 61, width: '80%', color: '#ff7043', label: 'Moderate Traffic' },
+                    { time: '4:00 PM', exp: 48, width: '60%', color: '#00C982', label: 'RECOMMENDED (-35%)' },
+                    { time: '4:15 PM', exp: 41, width: '50%', color: '#00C982', label: 'Dispersing Smog' },
+                  ].map((bar) => (
+                    <div key={bar.time} className="flex items-center gap-3">
+                      <span className="w-16 text-xs text-white shrink-0">{bar.time}</span>
+                      <div className="flex-1 h-6 bg-surface-container rounded-lg overflow-hidden relative">
+                        <div
+                          className="h-full rounded-lg transition-all duration-500 flex items-center px-2 text-[10px] font-bold text-[#002b18]"
+                          style={{ width: bar.width, backgroundColor: bar.color }}
+                        >
+                          {bar.label}
+                        </div>
+                      </div>
+                      <span className="w-12 text-right text-xs font-bold" style={{ color: bar.color }}>
+                        {bar.exp}
+                      </span>
                     </div>
                   ))}
                 </div>
               </div>
+            </div>
 
-              <div className="flex gap-3 justify-center">
+            {/* Sidebar info */}
+            <aside className="w-full lg:w-[400px] p-6 bg-surface-container-low border-l border-outline-variant/60 flex flex-col justify-between">
+              <div>
+                <span className="text-xs font-mono font-bold text-primary uppercase block mb-2">DECISION ENGINE</span>
+                <h2 className="text-xl font-bold text-white mb-3">Timing Shifts Exposure by 35%</h2>
+                <p className="text-xs text-on-surface-variant mb-6">
+                  Leaving 35 minutes later allows the atmospheric thermal inversion to break, reducing particulate inhalation from 72 → 48.
+                </p>
+                <div className="bg-surface-container rounded-2xl p-4 border border-outline-variant space-y-3 text-xs">
+                  <div className="font-bold text-white uppercase font-mono">Protective Recommendations:</div>
+                  <div className="flex items-center gap-2 text-on-surface">
+                    <span className="material-symbols-outlined text-primary text-[18px]">masks</span>
+                    Wear certified N95 respirator during Magadi corridor passage
+                  </div>
+                  <div className="flex items-center gap-2 text-on-surface">
+                    <span className="material-symbols-outlined text-primary text-[18px]">directions_car</span>
+                    Set vehicle ventilation to cabin recirculation mode
+                  </div>
+                  <div className="flex items-center gap-2 text-on-surface">
+                    <span className="material-symbols-outlined text-primary text-[18px]">timer</span>
+                    Schedule departure for 4:00 PM for maximum solar dispersion
+                  </div>
+                </div>
+              </div>
+              <button
+                onClick={() => setActiveStep('prediction')}
+                className="w-full py-3.5 px-4 rounded-2xl bg-primary text-[#002b18] font-bold text-sm shadow-[0_4px_0_#007a4e] hover:brightness-105 active:translate-y-1 transition-all mt-6 cursor-pointer"
+              >
+                NEXT: AI FORECASTER →
+              </button>
+            </aside>
+          </div>
+        )}
+
+        {/* ─── 6. STEP: AI FORECASTER ─── */}
+        {activeStep === 'prediction' && (
+          <div className="flex-1 p-6 max-w-5xl mx-auto w-full flex flex-col gap-6">
+            <div className="text-center">
+              <span className="text-xs font-mono font-bold text-primary uppercase">AWS SAGEMAKER MODEL</span>
+              <h2 className="text-2xl font-bold text-white mt-1">Living Environmental Model</h2>
+              <p className="text-xs text-on-surface-variant">Forecasts PM2.5 and thermal index with 87% confidence</p>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* PM2.5 Forecast Chart */}
+              <div className="bg-surface-container-low rounded-2xl p-5 border border-outline-variant shadow-md">
+                <span className="text-xs font-mono font-bold text-white uppercase block mb-3">PM2.5 Forecast (Today)</span>
+                <ResponsiveContainer width="100%" height={220}>
+                  <AreaChart data={DEMO_POLLUTION_TIMESERIES} margin={{ top: 5, right: 10, left: -20, bottom: 5 }}>
+                    <defs>
+                      <linearGradient id="pm25Grad" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="#00C982" stopOpacity={0.4} />
+                        <stop offset="95%" stopColor="#00C982" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#162522" />
+                    <XAxis dataKey="hour" tick={{ fill: '#8fa39a', fontSize: 10 }} />
+                    <YAxis tick={{ fill: '#8fa39a', fontSize: 11 }} />
+                    <Tooltip contentStyle={{ backgroundColor: '#101c1a', borderColor: '#283a34', borderRadius: '12px' }} />
+                    <Area type="monotone" dataKey="pm25" stroke="#00C982" fill="url(#pm25Grad)" strokeWidth={2.5} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Model Specifications */}
+              <div className="bg-surface-container-low rounded-2xl p-5 border border-outline-variant shadow-md flex flex-col justify-between">
+                <div>
+                  <span className="text-xs font-mono font-bold text-primary uppercase block mb-3">Model Architecture</span>
+                  <div className="space-y-3 text-xs font-mono">
+                    <div className="flex justify-between pb-2 border-b border-outline-variant/40">
+                      <span className="text-on-surface-variant">Algorithm:</span>
+                      <span className="text-white font-bold">XGBoost Non-linear Regressor</span>
+                    </div>
+                    <div className="flex justify-between pb-2 border-b border-outline-variant/40">
+                      <span className="text-on-surface-variant">Features:</span>
+                      <span className="text-white font-bold">Traffic density, wind, humidity, time</span>
+                    </div>
+                    <div className="flex justify-between pb-2 border-b border-outline-variant/40">
+                      <span className="text-on-surface-variant">Inference Latency:</span>
+                      <span className="text-primary font-bold">14ms Serverless</span>
+                    </div>
+                    <div className="flex justify-between pb-2 border-b border-outline-variant/40">
+                      <span className="text-on-surface-variant">Confidence Score:</span>
+                      <span className="text-primary font-bold">87.4% R²</span>
+                    </div>
+                  </div>
+                </div>
                 <button
-                  onClick={() => goToStep('intro')}
-                  className="px-6 py-2.5 rounded-xl border border-slate-700 text-slate-400 text-sm font-medium hover:border-slate-600 transition-colors"
+                  onClick={() => setActiveStep('aws')}
+                  className="w-full py-3 px-4 rounded-xl bg-primary text-[#002b18] font-bold text-xs shadow-[0_3px_0_#007a4e] mt-4 cursor-pointer"
                 >
-                  Restart Demo
+                  NEXT: CLOUD ARCHITECTURE →
                 </button>
-                <a
-                  href="/"
-                  className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-gradient-to-r from-eco-600 to-teal-600 text-white text-sm font-semibold hover:from-eco-500 hover:to-teal-500 transition-all duration-200"
-                >
-                  Try Live App <ChevronRight size={16} />
-                </a>
               </div>
             </div>
           </div>
         )}
-      </div>
+
+        {/* ─── 7. STEP: CLOUD STACK (AWS) ─── */}
+        {activeStep === 'aws' && (
+          <div className="flex-1 p-6 max-w-5xl mx-auto w-full flex flex-col gap-6">
+            <div className="text-center">
+              <span className="text-xs font-mono font-bold text-primary uppercase">AWS CLOUD FOUNDATION</span>
+              <h2 className="text-2xl font-bold text-white mt-1">Production AWS Architecture</h2>
+              <p className="text-xs text-on-surface-variant">Real cloud microservices powering hyper-local routing</p>
+            </div>
+
+            {/* Architecture Node Diagram */}
+            <div className="bg-surface-container-low rounded-3xl p-6 border-2 border-outline-variant shadow-lg flex items-center justify-around flex-wrap gap-4 font-mono text-center">
+              {[
+                { name: 'EcoRoute Client', icon: 'devices', sub: 'React 19 SPA' },
+                { name: 'API Gateway', icon: 'api', sub: 'REST /route/analyze' },
+                { name: 'AWS Lambda', icon: 'bolt', sub: 'Multi-obj A*' },
+                { name: 'SageMaker', icon: 'neurology', sub: 'PM2.5 Regressor' },
+                { name: 'DynamoDB', icon: 'database', sub: 'Telemetry Cache' },
+              ].map((node, i) => (
+                <div key={node.name} className="flex items-center gap-4">
+                  <div className="bg-surface-container rounded-2xl p-4 border border-outline-variant w-36 shadow-[0_4px_0_#283a34]">
+                    <span className="material-symbols-outlined text-primary text-[28px]">{node.icon}</span>
+                    <div className="text-xs font-bold text-white mt-1">{node.name}</div>
+                    <div className="text-[10px] text-on-surface-variant">{node.sub}</div>
+                  </div>
+                  {i < 4 && <span className="text-primary font-bold text-lg hidden sm:inline">→</span>}
+                </div>
+              ))}
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+              {DEMO_AWS_SERVICES.map((svc) => (
+                <div key={svc.name} className="bg-surface-container rounded-2xl p-3.5 border border-outline-variant">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white font-mono">{svc.name}</span>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/30">
+                      {svc.status}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-on-surface-variant mt-2 leading-tight">{svc.detail}</p>
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setActiveStep('impact')}
+              className="py-3.5 px-6 rounded-2xl bg-primary text-[#002b18] font-bold text-sm shadow-[0_4px_0_#007a4e] hover:brightness-105 active:translate-y-1 transition-all mx-auto cursor-pointer"
+            >
+              NEXT: IMPACT METRICS →
+            </button>
+          </div>
+        )}
+
+        {/* ─── 8. STEP: IMPACT ─── */}
+        {activeStep === 'impact' && (
+          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-[#071311]">
+            <div className="max-w-2xl">
+              <span className="text-xs font-mono font-bold text-primary uppercase tracking-widest block mb-4">
+                ENVIRONMENTAL IMPACT
+              </span>
+              <h1 className="text-4xl md:text-5xl font-headline font-black text-white tracking-tight leading-tight mb-4">
+                DON'T JUST FIND<br />THE FASTEST WAY THERE.
+              </h1>
+              <h2 className="text-2xl md:text-3xl font-headline font-bold text-primary mb-8">
+                FIND A BETTER WAY THERE.
+              </h2>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                <div className="bg-surface-container-low rounded-2xl p-5 border-2 border-primary shadow-[0_4px_0_#007a4e]">
+                  <span className="text-4xl font-black font-mono text-primary block">60%</span>
+                  <span className="text-xs font-bold text-white mt-1 block">Lower Exposure</span>
+                  <span className="text-[10px] font-mono text-on-surface-variant">vs fastest arterial</span>
+                </div>
+                <div className="bg-surface-container-low rounded-2xl p-5 border-2 border-[#4be2c8] shadow-[0_4px_0_#164d4b]">
+                  <span className="text-4xl font-black font-mono text-[#4be2c8] block">33%</span>
+                  <span className="text-xs font-bold text-white mt-1 block">Departure Relief</span>
+                  <span className="text-[10px] font-mono text-on-surface-variant">via AI forecast</span>
+                </div>
+                <div className="bg-surface-container-low rounded-2xl p-5 border-2 border-[#ffb74d] shadow-[0_4px_0_#e65100]">
+                  <span className="text-4xl font-black font-mono text-[#ffb74d] block">3</span>
+                  <span className="text-xs font-bold text-white mt-1 block">Routes Analyzed</span>
+                  <span className="text-[10px] font-mono text-on-surface-variant">live 10m mesh</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-center gap-3">
+                <button
+                  onClick={() => setActiveStep('routes')}
+                  className="py-3 px-6 rounded-xl bg-surface-container border border-outline-variant text-white font-mono text-xs hover:bg-surface-container-high transition-all cursor-pointer"
+                >
+                  ↺ REPLAY ROUTE DEMO
+                </button>
+                <Link
+                  to="/"
+                  className="py-3 px-6 rounded-xl bg-primary text-[#002b18] font-bold text-xs shadow-[0_3px_0_#007a4e] hover:brightness-105 transition-all text-decoration-none"
+                >
+                  LAUNCH FULL ENGINE →
+                </Link>
+              </div>
+            </div>
+          </div>
+        )}
+      </main>
+
+      {/* ─── 9. FOOTER ─── */}
+      <footer className="w-full bg-surface-container-lowest border-t border-outline-variant/40 py-4 px-5 text-xs font-mono">
+        <div className="flex flex-col md:flex-row items-center justify-between gap-3 text-on-surface-variant">
+          <div className="flex items-center gap-2 text-white font-bold">
+            <span className="material-symbols-outlined text-primary text-[18px]">eco</span>
+            EcoRoute AI <span className="text-on-surface-variant font-normal">| 10m Environmental Navigation & Sensor Telemetry</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <span className="text-primary">AQI • PM2.5 • Canopy • Heat</span>
+            <span>© 2025 EcoRoute Engine</span>
+          </div>
+        </div>
+      </footer>
     </div>
   );
 };

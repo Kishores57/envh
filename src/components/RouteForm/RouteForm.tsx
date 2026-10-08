@@ -1,8 +1,8 @@
 import React from 'react';
 import type { RouteRequest, TravelMode, UserProfile, RoutePriority } from '../../types';
 import {
-  MapPin, Navigation, Clock, User, Target, Zap, Footprints, Bike, Car,
-  GraduationCap, HardHat, BookOpen, ChevronRight, School,
+  MapPin, Navigation, Clock, User, Zap, Footprints, Bike, Car,
+  GraduationCap, HardHat, BookOpen, Target, School, Wind,
 } from 'lucide-react';
 import { LoadingSpinner } from '../shared';
 
@@ -14,92 +14,92 @@ interface RouteFormProps {
 }
 
 const TRAVEL_MODES: { value: TravelMode; label: string; icon: React.ReactNode }[] = [
-  { value: 'walking', label: 'Walking',  icon: <Footprints size={14} /> },
-  { value: 'cycling', label: 'Cycling',  icon: <Bike size={14} /> },
-  { value: 'driving', label: 'Driving',  icon: <Car size={14} /> },
+  { value: 'walking', label: 'Walk',  icon: <Footprints size={14} /> },
+  { value: 'cycling', label: 'Bike',  icon: <Bike size={14} /> },
+  { value: 'driving', label: 'Drive', icon: <Car size={14} /> },
 ];
 
 const PROFILES: { value: UserProfile; label: string; icon: React.ReactNode }[] = [
-  { value: 'student',        label: 'Student',       icon: <GraduationCap size={14} /> },
-  { value: 'outdoor_worker', label: 'Outdoor Worker', icon: <HardHat size={14} /> },
-  { value: 'cyclist',        label: 'Cyclist',       icon: <Bike size={14} /> },
-  { value: 'general',        label: 'General',       icon: <User size={14} /> },
+  { value: 'student',        label: 'Student',  icon: <GraduationCap size={13} /> },
+  { value: 'outdoor_worker', label: 'Worker',   icon: <HardHat size={13} /> },
+  { value: 'cyclist',        label: 'Cyclist',  icon: <Bike size={13} /> },
+  { value: 'general',        label: 'General',  icon: <User size={13} /> },
 ];
 
-const PRIORITIES: { value: RoutePriority; label: string; icon: React.ReactNode; desc: string; color: string }[] = [
-  { value: 'fastest',  label: 'Fastest',  icon: <Zap size={14} />,         desc: 'Time first',    color: '#3b82f6' },
-  { value: 'cleanest', label: 'Cleanest', icon: <BookOpen size={14} />,     desc: 'Air first',     color: '#22c55e' },
-  { value: 'coolest',  label: 'Coolest',  icon: <Target size={14} />,       desc: 'Heat first',    color: '#06b6d4' },
-  { value: 'balanced', label: 'Balanced', icon: <Navigation size={14} />,   desc: 'All balanced',  color: '#f59e0b' },
+const PRIORITIES: { value: RoutePriority; label: string; icon: React.ReactNode; desc: string; color: string; glow: string }[] = [
+  { value: 'fastest',  label: 'Fastest',  icon: <Zap size={13} />,       desc: 'Time first',   color: '#3b82f6', glow: '59,130,246' },
+  { value: 'cleanest', label: 'Cleanest', icon: <Wind size={13} />,      desc: 'Air first',    color: '#00C982', glow: '0,201,130' },
+  { value: 'coolest',  label: 'Coolest',  icon: <Target size={13} />,    desc: 'Heat first',   color: '#00BFA6', glow: '0,191,166' },
+  { value: 'balanced', label: 'Balanced', icon: <BookOpen size={13} />,  desc: 'All balanced', color: '#F4C542', glow: '244,197,66' },
 ];
+
+const SectionLabel: React.FC<{ children: React.ReactNode }> = ({ children }) => (
+  <div style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#516860', marginBottom: 8 }}>
+    {children}
+  </div>
+);
 
 export const RouteForm: React.FC<RouteFormProps> = ({ request, onChange, onSubmit, isAnalyzing }) => {
-  const inputClass = `
-    w-full bg-dark-600 border border-slate-700/60 rounded-xl px-3 py-2.5 text-sm text-slate-100
-    placeholder-slate-500 focus:outline-none focus:border-eco-500/60 focus:bg-dark-500
-    transition-all duration-200
-  `;
+  const canAnalyze = !isAnalyzing && !!request.origin && !!request.destination;
 
   return (
-    <div className="flex flex-col gap-4 h-full overflow-y-auto">
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 18, padding: '2px 0', height: '100%', overflowY: 'auto' }}>
 
-      {/* Origin */}
-      <div className="space-y-1.5">
-        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">From</label>
-        <div className="relative">
-          <MapPin size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-eco-400" />
+      {/* FROM */}
+      <div>
+        <SectionLabel>From</SectionLabel>
+        <div style={{ position: 'relative' }}>
+          <MapPin size={13} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: '#00C982' }} />
           <input
             type="text"
-            placeholder="Starting location"
+            placeholder="Starting location..."
             value={request.origin}
             onChange={e => onChange({ origin: e.target.value })}
-            className={`${inputClass} pl-8`}
+            className="eco-input"
           />
         </div>
       </div>
 
-      {/* Destination */}
-      <div className="space-y-1.5">
-        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">To</label>
-        <div className="relative">
-          <Navigation size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400" />
+      {/* TO */}
+      <div>
+        <SectionLabel>To</SectionLabel>
+        <div style={{ position: 'relative' }}>
+          <Navigation size={13} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: '#F4C542' }} />
           <input
             type="text"
-            placeholder="Destination"
+            placeholder="Destination..."
             value={request.destination}
             onChange={e => onChange({ destination: e.target.value })}
-            className={`${inputClass} pl-8`}
+            className="eco-input"
           />
         </div>
       </div>
 
-      {/* Departure time */}
-      <div className="space-y-1.5">
-        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Departure Time</label>
-        <div className="relative">
-          <Clock size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+      {/* WHEN */}
+      <div>
+        <SectionLabel>Departure Time</SectionLabel>
+        <div style={{ position: 'relative' }}>
+          <Clock size={13} style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: '#81938D' }} />
           <input
             type="datetime-local"
             value={request.departureTime.slice(0, 16)}
             onChange={e => onChange({ departureTime: new Date(e.target.value).toISOString() })}
-            className={`${inputClass} pl-8 [color-scheme:dark]`}
+            className="eco-input"
           />
         </div>
       </div>
 
-      {/* Travel mode */}
-      <div className="space-y-1.5">
-        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Travel Mode</label>
-        <div className="grid grid-cols-3 gap-2">
+      <hr className="eco-divider" />
+
+      {/* TRAVEL MODE */}
+      <div>
+        <SectionLabel>Travel Mode</SectionLabel>
+        <div className="segment-control">
           {TRAVEL_MODES.map(({ value, label, icon }) => (
             <button
               key={value}
               onClick={() => onChange({ travelMode: value })}
-              className={`flex flex-col items-center gap-1.5 p-2.5 rounded-xl text-xs font-medium transition-all duration-200 border ${
-                request.travelMode === value
-                  ? 'bg-eco-500/15 border-eco-500/40 text-eco-400'
-                  : 'bg-dark-600 border-slate-700/50 text-slate-400 hover:border-slate-600 hover:text-slate-300'
-              }`}
+              className={`segment-btn${request.travelMode === value ? ' active' : ''}`}
             >
               {icon}
               {label}
@@ -108,85 +108,138 @@ export const RouteForm: React.FC<RouteFormProps> = ({ request, onChange, onSubmi
         </div>
       </div>
 
-      {/* User Profile */}
-      <div className="space-y-1.5">
-        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Profile</label>
-        <div className="grid grid-cols-2 gap-2">
-          {PROFILES.map(({ value, label, icon }) => (
-            <button
-              key={value}
-              onClick={() => onChange({ profile: value })}
-              className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-medium transition-all duration-200 border ${
-                request.profile === value
-                  ? 'bg-eco-500/15 border-eco-500/40 text-eco-400'
-                  : 'bg-dark-600 border-slate-700/50 text-slate-400 hover:border-slate-600 hover:text-slate-300'
-              }`}
-            >
-              {icon}
-              {label}
-            </button>
-          ))}
+      {/* PROFILE */}
+      <div>
+        <SectionLabel>Profile</SectionLabel>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+          {PROFILES.map(({ value, label, icon }) => {
+            const active = request.profile === value;
+            return (
+              <button
+                key={value}
+                onClick={() => onChange({ profile: value })}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 7,
+                  padding: '8px 10px',
+                  borderRadius: 9,
+                  fontSize: 12, fontWeight: 600,
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  ...(active ? {
+                    background: 'rgba(0, 201, 130, 0.1)',
+                    color: '#00C982',
+                    border: '1.5px solid rgba(0, 201, 130, 0.3)',
+                    boxShadow: '0 2px 0 rgba(0,0,0,0.2), inset 0 1px 0 rgba(0, 201, 130, 0.08)',
+                  } : {
+                    background: '#0d1714',
+                    color: '#81938D',
+                    border: '1.5px solid #1E332E',
+                    boxShadow: '0 2px 0 rgba(0,0,0,0.2)',
+                  }),
+                }}
+              >
+                {icon}
+                {label}
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* Priority */}
-      <div className="space-y-1.5">
-        <label className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Priority</label>
-        <div className="grid grid-cols-2 gap-2">
-          {PRIORITIES.map(({ value, label, icon, desc, color }) => (
-            <button
-              key={value}
-              onClick={() => onChange({ priority: value })}
-              className={`flex items-center gap-2 px-3 py-2.5 rounded-xl text-xs font-medium transition-all duration-200 border text-left ${
-                request.priority === value
-                  ? 'border-opacity-40 text-slate-100'
-                  : 'bg-dark-600 border-slate-700/50 text-slate-400 hover:border-slate-600 hover:text-slate-300'
-              }`}
-              style={request.priority === value ? {
-                background: `${color}18`,
-                borderColor: `${color}50`,
-                color,
-              } : {}}
-            >
-              <span style={request.priority === value ? { color } : {}}>{icon}</span>
-              <div>
-                <div>{label}</div>
-                <div className="text-slate-500 font-normal">{desc}</div>
-              </div>
-            </button>
-          ))}
+      {/* PRIORITY / OPTIMIZE */}
+      <div>
+        <SectionLabel>Optimize For</SectionLabel>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+          {PRIORITIES.map(({ value, label, icon, desc, color, glow }) => {
+            const active = request.priority === value;
+            return (
+              <button
+                key={value}
+                onClick={() => onChange({ priority: value })}
+                style={{
+                  display: 'flex', alignItems: 'flex-start', gap: 8,
+                  padding: '9px 10px',
+                  borderRadius: 9,
+                  fontSize: 12, fontWeight: 600,
+                  cursor: 'pointer',
+                  textAlign: 'left',
+                  transition: 'all 0.15s ease',
+                  ...(active ? {
+                    background: `rgba(${glow}, 0.1)`,
+                    color: color,
+                    border: `1.5px solid rgba(${glow}, 0.3)`,
+                    boxShadow: `0 2px 0 rgba(0,0,0,0.2), 0 4px 12px rgba(${glow}, 0.08)`,
+                  } : {
+                    background: '#0d1714',
+                    color: '#81938D',
+                    border: '1.5px solid #1E332E',
+                    boxShadow: '0 2px 0 rgba(0,0,0,0.2)',
+                  }),
+                }}
+              >
+                <span style={active ? { color } : {}}>{icon}</span>
+                <div>
+                  <div>{label}</div>
+                  <div style={{ fontSize: 10, fontWeight: 400, color: active ? `rgba(${glow}, 0.7)` : '#516860', marginTop: 1 }}>{desc}</div>
+                </div>
+              </button>
+            );
+          })}
         </div>
       </div>
 
-      {/* School Mode */}
-      <div className="flex items-center gap-3 p-3 rounded-xl bg-dark-600 border border-slate-700/50">
-        <School size={16} className="text-yellow-400 flex-shrink-0" />
-        <div className="flex-1">
-          <p className="text-xs font-medium text-slate-300">School Safety Mode</p>
-          <p className="text-xs text-slate-500">Enhanced analysis for school/college routes</p>
+      {/* SCHOOL MODE */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: '10px 12px',
+        background: '#0d1714',
+        border: '1.5px solid #1E332E',
+        borderRadius: 10,
+        boxShadow: '0 2px 0 rgba(0,0,0,0.2)',
+      }}>
+        <School size={15} style={{ color: '#F4C542', flexShrink: 0 }} />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: '#B8CEC7' }}>School Mode</div>
+          <div style={{ fontSize: 10, color: '#516860', marginTop: 1 }}>Enhanced analysis for school routes</div>
         </div>
         <button
           onClick={() => onChange({ isSchoolMode: !request.isSchoolMode })}
-          className={`relative w-9 h-5 rounded-full transition-all duration-200 ${request.isSchoolMode ? 'bg-eco-500' : 'bg-slate-700'}`}
+          style={{
+            position: 'relative', width: 36, height: 20, borderRadius: 10,
+            background: request.isSchoolMode ? '#00C982' : '#1E332E',
+            border: 'none', cursor: 'pointer',
+            transition: 'background 0.2s',
+            boxShadow: request.isSchoolMode ? '0 0 12px rgba(0,201,130,0.3)' : 'none',
+          }}
         >
-          <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all duration-200 ${request.isSchoolMode ? 'left-4' : 'left-0.5'}`} />
+          <span style={{
+            position: 'absolute', top: 2,
+            left: request.isSchoolMode ? 18 : 2,
+            width: 16, height: 16, borderRadius: '50%',
+            background: '#F4F7F5',
+            transition: 'left 0.2s',
+            boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
+          }} />
         </button>
       </div>
 
-      {/* Submit */}
+      {/* ANALYZE BUTTON */}
       <button
         onClick={onSubmit}
-        disabled={isAnalyzing || !request.origin || !request.destination}
-        className={`w-full flex items-center justify-center gap-2 py-3 rounded-xl font-semibold text-sm transition-all duration-200 mt-2 ${
-          isAnalyzing || !request.origin || !request.destination
-            ? 'bg-slate-700 text-slate-500 cursor-not-allowed'
-            : 'bg-gradient-to-r from-eco-600 to-teal-600 text-white hover:from-eco-500 hover:to-teal-500 glow-eco'
-        }`}
+        disabled={!canAnalyze}
+        className="btn-primary"
+        style={{ width: '100%', padding: '13px 20px', fontSize: 13, marginTop: 4 }}
       >
         {isAnalyzing ? (
-          <><LoadingSpinner size={16} color="#fff" /><span>Analyzing route...</span></>
+          <>
+            <LoadingSpinner size={15} color="#07110F" />
+            <span>Analyzing route...</span>
+          </>
         ) : (
-          <><ChevronRight size={16} /><span>Analyze Route</span></>
+          <>
+            <Wind size={15} />
+            <span>Analyze Route</span>
+          </>
         )}
       </button>
     </div>
