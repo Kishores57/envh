@@ -47,7 +47,7 @@ function App() {
   }, []);
 
   return (
-    <div className="flex flex-col h-screen bg-dark-900 overflow-hidden">
+    <div className="flex flex-col h-screen overflow-hidden" style={{ background: 'var(--bg-app)', color: 'var(--text-primary)', transition: 'background-color 0.25s ease' }}>
       {!isDemo && <Navbar />}
       <div className="flex-1 overflow-hidden">
         <Routes>

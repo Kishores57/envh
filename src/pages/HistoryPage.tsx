@@ -2,7 +2,7 @@ import React from 'react';
 import type { SavedRoute } from '../types';
 import { getSavedRoutes } from '../lib/aws';
 import { ExposureBadge } from '../components/shared';
-import { Clock, MapPin, Navigation, Trash2, BookOpen } from 'lucide-react';
+import { Clock, MapPin, Navigation, Trash2, Compass } from 'lucide-react';
 
 export const HistoryPage: React.FC = () => {
   const [routes, setRoutes] = React.useState<SavedRoute[]>(() => getSavedRoutes());
@@ -14,53 +14,107 @@ export const HistoryPage: React.FC = () => {
   };
 
   return (
-    <div className="h-full pt-14 overflow-y-auto bg-dark-900 px-6 py-6">
-      <div className="max-w-3xl mx-auto">
-        <div className="mb-6">
-          <h1 className="text-2xl font-display font-bold text-slate-100 mb-1">Analysis History</h1>
-          <p className="text-sm text-slate-500">Your previously analyzed routes</p>
+    <div style={{ height: '100%', paddingTop: 64, overflowY: 'auto', background: 'var(--bg-app)', padding: '64px 24px 32px' }}>
+      <div style={{ maxWidth: 840, margin: '0 auto' }}>
+        <div style={{ marginBottom: 24 }}>
+          <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'Outfit, sans-serif', margin: '0 0 4px' }}>
+            Analysis & Trip History
+          </h1>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: 0 }}>
+            Your previously analyzed environmental routes and exposure scores
+          </p>
         </div>
 
         {routes.length === 0 ? (
-          <div className="glass-card p-12 text-center">
-            <BookOpen size={40} className="text-slate-700 mx-auto mb-4" />
-            <p className="text-slate-500 mb-2">No saved routes yet</p>
-            <p className="text-sm text-slate-600">Analyze a route and save it to see it here</p>
+          <div style={{
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: 16,
+            padding: '48px 24px',
+            textAlign: 'center',
+            boxShadow: 'var(--shadow-card)',
+          }}>
+            <Compass size={44} color="#38BDF8" style={{ margin: '0 auto 16px' }} />
+            <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary)', margin: '0 0 6px' }}>
+              No Saved Routes Yet
+            </h3>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', maxWidth: 320, margin: '0 auto' }}>
+              Calculate and save eco routes from the Navigator console to monitor your historical commute exposure.
+            </p>
           </div>
         ) : (
-          <div className="space-y-3">
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {routes.map(r => (
-              <div key={r.routeId} className="glass-card p-4 flex items-center gap-4">
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <MapPin size={12} className="text-eco-400 flex-shrink-0" />
-                    <span className="text-xs text-slate-400 truncate">{r.origin}</span>
-                    <span className="text-slate-600">→</span>
-                    <Navigation size={12} className="text-blue-400 flex-shrink-0" />
-                    <span className="text-xs text-slate-400 truncate">{r.destination}</span>
+              <div
+                key={r.routeId}
+                style={{
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: 14,
+                  padding: '16px 18px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 16,
+                  boxShadow: 'var(--shadow-card)',
+                  transition: 'all 0.15s ease',
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                    <MapPin size={13} color="#22C55E" style={{ flexShrink: 0 }} />
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {r.origin}
+                    </span>
+                    <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>→</span>
+                    <Navigation size={13} color="#38BDF8" style={{ flexShrink: 0 }} />
+                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {r.destination}
+                    </span>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                     <ExposureBadge
                       level={r.exposureScore < 30 ? 'low' : r.exposureScore < 55 ? 'moderate' : r.exposureScore < 75 ? 'elevated' : 'high'}
                       size="sm"
                     />
-                    <span className="text-xs text-slate-500 capitalize">{r.travelMode}</span>
-                    {r.label && <span className="text-xs text-slate-500">{r.label}</span>}
+                    <span style={{ fontSize: 11.5, color: 'var(--text-muted)', textTransform: 'capitalize', fontWeight: 600 }}>{r.travelMode}</span>
+                    {r.label && <span style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>{r.label}</span>}
                   </div>
                 </div>
-                <div className="text-right flex-shrink-0 mr-3">
-                  <div className="text-lg font-bold text-slate-200">{r.exposureScore}</div>
-                  <div className="text-xs text-slate-500">score</div>
+
+                <div style={{ textAlign: 'right', flexShrink: 0, paddingRight: 8 }}>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'Outfit, sans-serif' }}>
+                    {r.exposureScore}
+                  </div>
+                  <div style={{ fontSize: 10, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>score</div>
                 </div>
-                <div className="flex items-center gap-2 text-xs text-slate-500 flex-shrink-0">
-                  <Clock size={11} />
-                  {new Date(r.savedAt).toLocaleDateString()}
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11.5, color: 'var(--text-muted)', flexShrink: 0 }}>
+                  <Clock size={12} />
+                  <span>{new Date(r.savedAt).toLocaleDateString()}</span>
                 </div>
+
                 <button
                   onClick={() => deleteRoute(r.routeId)}
-                  className="p-1.5 text-slate-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                  aria-label="Delete saved route"
+                  style={{
+                    padding: 8,
+                    borderRadius: 8,
+                    border: 'none',
+                    background: 'transparent',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease',
+                  }}
+                  onMouseEnter={e => {
+                    (e.currentTarget as HTMLElement).style.color = '#EF4444';
+                    (e.currentTarget as HTMLElement).style.background = 'rgba(239, 68, 68, 0.1)';
+                  }}
+                  onMouseLeave={e => {
+                    (e.currentTarget as HTMLElement).style.color = 'var(--text-muted)';
+                    (e.currentTarget as HTMLElement).style.background = 'transparent';
+                  }}
                 >
-                  <Trash2 size={14} />
+                  <Trash2 size={15} />
                 </button>
               </div>
             ))}

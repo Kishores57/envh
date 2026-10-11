@@ -1,0 +1,13 @@
+version = 0.1
+
+[default.deploy.parameters]
+stack_name = "ecoroute-ai"
+resolve_s3 = true
+s3_prefix = "ecoroute-ai"
+capabilities = "CAPABILITY_IAM CAPABILITY_NAMED_IAM"
+disable_rollback = false
+image_repositories = []
+confirm_changeset = false
+
+[default.global.parameters]
+region = "ap-south-1"

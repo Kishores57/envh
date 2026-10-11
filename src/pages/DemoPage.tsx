@@ -5,6 +5,8 @@ import {
   ResponsiveContainer,
 } from 'recharts';
 import { DEMO_POLLUTION_TIMESERIES, DEMO_AWS_SERVICES } from '../data/demoData';
+import { useTheme } from '../context/ThemeContext';
+import { Sun, Moon } from 'lucide-react';
 
 type DemoStep = 'intro' | 'routes' | 'only-route' | 'prediction' | 'aws' | 'impact';
 type CommuteMode = 'walk' | 'bike' | 'car';
@@ -19,6 +21,7 @@ const STEPS: { id: DemoStep; label: string; num: string }[] = [
 ];
 
 export const DemoPage: React.FC = () => {
+  const { theme, toggleTheme } = useTheme();
   const [activeStep, setActiveStep] = useState<DemoStep>('routes');
   const [selectedRoute, setSelectedRoute] = useState<'A' | 'B' | 'C'>('B');
   const [commuteMode, setCommuteMode] = useState<CommuteMode>('bike');
@@ -107,7 +110,7 @@ export const DemoPage: React.FC = () => {
               <span className="material-symbols-outlined text-[#002b18] text-[22px] font-bold">eco</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="font-headline font-extrabold text-[20px] text-white tracking-tight">EcoRoute</span>
+              <span className="font-headline font-extrabold text-[20px] text-on-surface tracking-tight">EcoRoute</span>
               <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-full bg-primary/20 text-primary border border-primary/40 uppercase tracking-wider">
                 AI ENGINE
               </span>
@@ -126,7 +129,7 @@ export const DemoPage: React.FC = () => {
                     className={`px-3 py-1.5 rounded-xl font-mono text-xs transition-all flex items-center gap-1.5 ${
                       isActive
                         ? 'bg-primary text-[#002b18] font-bold shadow-[0_2px_0_#007a4e]'
-                        : 'text-on-surface-variant hover:text-white'
+                        : 'text-on-surface-variant hover:text-on-surface'
                     }`}
                   >
                     {isActive && <span className="w-2 h-2 rounded-full bg-[#002b18] animate-pulse" />}
@@ -148,12 +151,20 @@ export const DemoPage: React.FC = () => {
               <span className="w-2 h-2 rounded-full bg-[#ff7043]" />
               LIVE SENSORS
             </div>
+            <button
+              onClick={toggleTheme}
+              aria-label="Toggle Light and Dark Mode"
+              title={`Switch to ${theme === 'dark' ? 'Light' : 'Dark'} Mode`}
+              className="w-9 h-9 rounded-xl bg-surface-container-high border border-outline-variant flex items-center justify-center text-primary hover:bg-surface-container-highest cursor-pointer transition-colors shadow-sm"
+            >
+              {theme === 'dark' ? <Moon size={16} className="text-[#38BDF8]" /> : <Sun size={16} className="text-[#FACC15]" />}
+            </button>
             <Link
               to="/"
               title="Return to Navigation View"
               className="w-9 h-9 rounded-xl bg-surface-container-high border border-outline-variant flex items-center justify-center text-primary hover:bg-surface-container-highest cursor-pointer transition-colors shadow-sm"
             >
-              <span className="material-symbols-outlined text-[19px]">account_circle</span>
+              <span className="material-symbols-outlined text-[19px]">map</span>
             </Link>
           </div>
         </div>

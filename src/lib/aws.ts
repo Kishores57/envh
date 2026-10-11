@@ -29,6 +29,8 @@ async function checkAwsAvailability(): Promise<boolean> {
 
 // ─── Route Analysis ───────────────────────────────────────────────────────────
 
+import { calculateRealRoutes, searchPlaces } from './openSourceApi';
+
 export async function analyzeRoute(req: RouteRequest): Promise<RouteAnalysisResult> {
   const awsOk = await checkAwsAvailability();
 
@@ -43,12 +45,45 @@ export async function analyzeRoute(req: RouteRequest): Promise<RouteAnalysisResu
       if (!res.ok) throw new Error(`API error ${res.status}`);
       return await res.json();
     } catch (err) {
-      console.warn('[EcoRoute] Lambda call failed, falling back to demo data:', err);
+      console.warn('[EcoRoute] Lambda call failed, falling back to open source API:', err);
     }
   }
 
+  // Attempt real routing via OpenStreetMap Nominatim + OSRM + Open-Meteo
+  try {
+    let originCoords = req.originCoords;
+    let destCoords = req.destinationCoords;
+
+    if (!originCoords && req.origin) {
+      const results = await searchPlaces(req.origin);
+      if (results.length > 0) {
+        originCoords = { lat: results[0].lat, lng: results[0].lng };
+      }
+    }
+
+    if (!destCoords && req.destination) {
+      const results = await searchPlaces(req.destination);
+      if (results.length > 0) {
+        destCoords = { lat: results[0].lat, lng: results[0].lng };
+      }
+    }
+
+    if (originCoords && destCoords) {
+      return await calculateRealRoutes(
+        originCoords,
+        destCoords,
+        req.origin || 'Origin',
+        req.destination || 'Destination',
+        req.travelMode || 'walking',
+        req.priority || 'cleanest'
+      );
+    }
+  } catch (err) {
+    console.warn('[EcoRoute] Real routing API error, falling back to demo data:', err);
+  }
+
   // Deterministic fallback
-  await simulateDelay(1800);
+  await simulateDelay(800);
   return getDemoAnalysisResult(req.priority);
 }
 

@@ -1,133 +1,19 @@
 import React, { useState, useCallback } from 'react';
-import type { AppState, RouteRequest, RouteSegment } from '../types';
+import type { AppState, RouteRequest, RouteSegment, Coordinates } from '../types';
 import { RouteForm } from '../components/RouteForm/RouteForm';
 import { EcoMap } from '../components/Map/EcoMap';
 import { RouteRecommendation } from '../components/RouteRecommendation/RouteRecommendation';
 import { SegmentDetail } from '../components/SegmentDetail/SegmentDetail';
 import { PulseIndicator, LoadingSpinner } from '../components/shared';
 import { analyzeRoute } from '../lib/aws';
+import { reverseGeocode } from '../lib/openSourceApi';
 import { DEMO_ORIGIN, DEMO_DESTINATION, DEMO_ORIGIN_COORDS, DEMO_DEST_COORDS } from '../data/demoData';
-import { Wind, Activity, AlertTriangle, Leaf, Thermometer, Map } from 'lucide-react';
+import { Activity, AlertTriangle, Leaf, Map, Sparkles, CloudSun } from 'lucide-react';
 
 interface DashboardProps {
   state: AppState;
   onStateChange: (partial: Partial<AppState>) => void;
 }
-
-// Illustrated idle SVG scene
-const MapIdleScene: React.FC<{ isAnalyzing: boolean }> = ({ isAnalyzing }) => (
-  <svg viewBox="0 0 600 380" style={{ width: '100%', maxWidth: 560, opacity: 0.9 }} xmlns="http://www.w3.org/2000/svg">
-    {/* Map base */}
-    <rect x="0" y="0" width="600" height="380" fill="#101C1A" rx="16" />
-    <rect x="10" y="10" width="580" height="360" fill="#0d1714" rx="14" />
-
-    {/* Grid lines */}
-    {[60, 120, 180, 240, 300, 360].map(y => (
-      <line key={y} x1="10" y1={y} x2="590" y2={y} stroke="#172622" strokeWidth="1" />
-    ))}
-    {[80, 160, 240, 320, 400, 480, 560].map(x => (
-      <line key={x} x1={x} y1="10" x2={x} y2="370" stroke="#172622" strokeWidth="1" />
-    ))}
-
-    {/* Water body */}
-    <ellipse cx="520" cy="280" rx="90" ry="55" fill="#0a1e28" stroke="#162a36" strokeWidth="1.5" />
-    <ellipse cx="520" cy="280" rx="80" ry="48" fill="#0d2030" />
-
-    {/* Green parks */}
-    <rect x="40" y="40" width="80" height="60" fill="#0f2a1a" rx="8" />
-    <rect x="45" y="45" width="70" height="50" fill="#122e1d" rx="6" />
-    {/* Trees in park */}
-    {[[60,60],[75,55],[90,65],[70,72],[85,70]].map(([x, y], i) => (
-      <g key={i}>
-        <circle cx={x} cy={y} r="6" fill="#1a4a25" />
-        <circle cx={x} cy={y} r="4" fill="#1e5a2c" />
-        <circle cx={x} cy={y-3} r="2.5" fill="#22692f" />
-      </g>
-    ))}
-    <text x="80" y="108" fill="#29683a" fontSize="7" fontWeight="700" textAnchor="middle" letterSpacing="0.05em">PARK</text>
-
-    {/* Another park (right) */}
-    <rect x="460" y="50" width="100" height="70" fill="#0f2a1a" rx="8" />
-    {[[475,70],[492,60],[510,72],[485,84],[503,82]].map(([x, y], i) => (
-      <g key={i}>
-        <circle cx={x} cy={y} r="6" fill="#1a4a25" />
-        <circle cx={x} cy={y} r="4" fill="#1e5a2c" />
-      </g>
-    ))}
-
-    {/* Roads – major */}
-    <path d="M0 190 L600 190" stroke="#1E332E" strokeWidth="14" />
-    <path d="M0 190 L600 190" stroke="#29423B" strokeWidth="10" />
-    <path d="M0 190 L600 190" stroke="#1E332E" strokeWidth="2" strokeDasharray="20 10" />
-
-    <path d="M300 0 L300 380" stroke="#1E332E" strokeWidth="12" />
-    <path d="M300 0 L300 380" stroke="#29423B" strokeWidth="8" />
-    <path d="M300 0 L300 380" stroke="#1E332E" strokeWidth="2" strokeDasharray="20 10" />
-
-    {/* Roads – minor */}
-    <path d="M0 100 L280 100 Q300 100 300 120" stroke="#172622" strokeWidth="6" fill="none" />
-    <path d="M0 280 L280 280 Q300 280 300 260" stroke="#172622" strokeWidth="6" fill="none" />
-    <path d="M400 0 L400 180" stroke="#172622" strokeWidth="6" />
-    <path d="M140 0 L140 380" stroke="#172622" strokeWidth="5" />
-    <path d="M0 310 L600 310" stroke="#172622" strokeWidth="5" />
-
-    {/* Pollution zone (translucent red area) */}
-    <ellipse cx="200" cy="230" rx="65" ry="40" fill="rgba(255,90,95,0.06)" stroke="rgba(255,90,95,0.2)" strokeWidth="1.5" />
-    <ellipse cx="200" cy="230" rx="45" ry="28" fill="rgba(255,90,95,0.08)" />
-    {/* Pollution particles */}
-    {isAnalyzing ? null : [[195,218],[210,228],[190,240],[208,242]].map(([x, y], i) => (
-      <circle key={i} cx={x} cy={y} r="2.5" fill="rgba(255,90,95,0.5)" className="particle-drift" style={{ animationDelay: `${i * 0.8}s` }} />
-    ))}
-    <text x="200" y="234" fill="rgba(255,90,95,0.6)" fontSize="8" fontWeight="800" textAnchor="middle" letterSpacing="0.08em">POLLUTION</text>
-
-    {/* Heat zone */}
-    <ellipse cx="440" cy="150" rx="50" ry="35" fill="rgba(255,138,61,0.06)" stroke="rgba(255,138,61,0.2)" strokeWidth="1.5" />
-    <text x="440" y="154" fill="rgba(255,138,61,0.6)" fontSize="8" fontWeight="800" textAnchor="middle" letterSpacing="0.08em">HEAT ZONE</text>
-
-    {/* Sample route A (orange) */}
-    <path d="M60 190 L200 190 Q220 190 220 210 L220 310 L440 310" stroke="rgba(255,138,61,0.35)" strokeWidth="3.5" fill="none" strokeLinecap="round" strokeDasharray="6 3" />
-
-    {/* Sample route B (green) – recommended */}
-    <path d="M60 190 L140 190 L140 100 L300 100 L300 190 L440 190 L440 310" stroke="#00C982" strokeWidth="4" fill="none" strokeLinecap="round"
-      style={{ filter: 'drop-shadow(0 0 6px rgba(0,201,130,0.5))' }}
-    />
-
-    {/* Sample route C (yellow) */}
-    <path d="M60 190 L300 190 Q320 190 320 200 L320 280 L440 280 L440 310" stroke="rgba(244,197,66,0.35)" strokeWidth="3.5" fill="none" strokeLinecap="round" strokeDasharray="6 3" />
-
-    {/* Origin marker */}
-    <circle cx="60" cy="190" r="9" fill="#00C982" stroke="#F4F7F5" strokeWidth="2.5" style={{ filter: 'drop-shadow(0 0 6px rgba(0,201,130,0.7))' }} className="float-anim" />
-    <circle cx="60" cy="190" r="3.5" fill="#07110F" />
-    <text x="60" y="211" fill="#00C982" fontSize="7.5" fontWeight="800" textAnchor="middle" letterSpacing="0.05em">HOME</text>
-
-    {/* Destination marker */}
-    <path d="M440 302 L440 321 C440 326 445 331 450 328 L458 322 C463 318 463 309 458 305 L450 299 C445 295 440 297 440 302 Z" fill="#F4C542" stroke="#F4F7F5" strokeWidth="2"
-      style={{ filter: 'drop-shadow(0 0 6px rgba(244,197,66,0.7))' }}
-    />
-    <circle cx="450" cy="313" r="2.5" fill="#07110F" />
-    <text x="450" y="336" fill="#F4C542" fontSize="7.5" fontWeight="800" textAnchor="middle" letterSpacing="0.05em">COLLEGE</text>
-
-    {/* Green corridor highlight */}
-    <rect x="138" y="98" width="4" height="94" fill="rgba(0,201,130,0.2)" />
-    <rect x="298" y="98" width="4" height="94" fill="rgba(0,201,130,0.2)" />
-    <text x="220" y="88" fill="rgba(0,201,130,0.5)" fontSize="7" fontWeight="700" textAnchor="middle" letterSpacing="0.06em">GREEN CORRIDOR</text>
-
-    {/* Hotspot indicator */}
-    <circle cx="200" cy="190" r="16" fill="rgba(255,90,95,0.1)" stroke="rgba(255,90,95,0.4)" strokeWidth="1.5" className="breathe" />
-    <circle cx="200" cy="190" r="8" fill="rgba(255,90,95,0.2)" stroke="rgba(255,90,95,0.6)" strokeWidth="1" />
-    <circle cx="200" cy="190" r="3.5" fill="#FF5A5F" />
-
-    {/* Loading overlay when analyzing */}
-    {isAnalyzing && (
-      <>
-        <rect x="0" y="0" width="600" height="380" fill="rgba(7,17,15,0.7)" rx="14" />
-        <circle cx="300" cy="190" r="30" fill="none" stroke="#00C982" strokeWidth="3" strokeDasharray="120 60" style={{ transformOrigin: '300px 190px', animation: 'spin 1s linear infinite' }} />
-        <text x="300" y="195" fill="#00C982" fontSize="11" fontWeight="700" textAnchor="middle" letterSpacing="0.06em">ANALYZING</text>
-        <text x="300" y="210" fill="#516860" fontSize="8" fontWeight="500" textAnchor="middle">Processing environmental data...</text>
-      </>
-    )}
-  </svg>
-);
 
 export const Dashboard: React.FC<DashboardProps> = ({ state, onStateChange }) => {
   const [selectedSegment, setSelectedSegment] = useState<RouteSegment | null>(null);
@@ -147,55 +33,153 @@ export const Dashboard: React.FC<DashboardProps> = ({ state, onStateChange }) =>
     }
   }, [state.request, onStateChange]);
 
+  // Handle map click: drop origin first, then destination
+  const handleMapClick = useCallback(async (coords: Coordinates) => {
+    try {
+      const address = await reverseGeocode(coords.lat, coords.lng);
+      if (!state.request.originCoords) {
+        onStateChange({
+          request: {
+            ...state.request,
+            origin: address,
+            originCoords: coords,
+          },
+        });
+      } else if (!state.request.destinationCoords) {
+        onStateChange({
+          request: {
+            ...state.request,
+            destination: address,
+            destinationCoords: coords,
+          },
+        });
+      } else {
+        // If both already set, update destination
+        onStateChange({
+          request: {
+            ...state.request,
+            destination: address,
+            destinationCoords: coords,
+          },
+        });
+      }
+    } catch (err) {
+      console.warn('Map click reverse geocode failed:', err);
+    }
+  }, [state.request, onStateChange]);
+
+  // Handle origin marker drag
+  const handleOriginDrag = useCallback(async (coords: Coordinates) => {
+    try {
+      const address = await reverseGeocode(coords.lat, coords.lng);
+      onStateChange({
+        request: {
+          ...state.request,
+          origin: address,
+          originCoords: coords,
+        },
+      });
+    } catch {}
+  }, [state.request, onStateChange]);
+
+  // Handle destination marker drag
+  const handleDestDrag = useCallback(async (coords: Coordinates) => {
+    try {
+      const address = await reverseGeocode(coords.lat, coords.lng);
+      onStateChange({
+        request: {
+          ...state.request,
+          destination: address,
+          destinationCoords: coords,
+        },
+      });
+    } catch {}
+  }, [state.request, onStateChange]);
+
   const envConds = state.result?.environmentalConditions;
   const selectedRoute = state.result?.routes.find(r => r.id === state.selectedRouteId);
 
-  return (
-    <div style={{ display: 'flex', height: '100%', paddingTop: 56, background: '#07110F', overflow: 'hidden' }}>
+  // Active coordinates
+  const currentOriginCoords = state.request.originCoords || (state.result ? DEMO_ORIGIN_COORDS : undefined);
+  const currentDestCoords = state.request.destinationCoords || (state.result ? DEMO_DEST_COORDS : undefined);
 
-      {/* ─── LEFT PANEL ─── */}
+  return (
+    <div style={{ display: 'flex', height: '100%', paddingTop: 60, background: 'var(--bg-app)', overflow: 'hidden' }}>
+
+      {/* ─── LEFT PANEL: NAVIGATION CONSOLE ─── */}
       <aside style={{
-        width: 280, flexShrink: 0,
-        borderRight: '1.5px solid #29423B',
+        width: 310, flexShrink: 0,
+        borderRight: '1px solid var(--border-color)',
         padding: '16px 14px',
         overflowY: 'auto',
-        background: '#101C1A',
-        boxShadow: '4px 0 0 rgba(0,0,0,0.25)',
+        background: 'var(--bg-panel)',
+        boxShadow: 'var(--shadow-card)',
         position: 'relative',
+        zIndex: 20,
+        transition: 'background-color 0.25s ease, border-color 0.25s ease',
       }}>
         {/* Panel label */}
-        <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.14em', color: '#29423B', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Map size={11} />
-          Navigation Console
+        <div style={{
+          fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', color: 'var(--text-muted)',
+          textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 7
+        }}>
+          <Map size={13} color="#38BDF8" />
+          <span>Trip Planner & Weather</span>
         </div>
 
-        {/* Live conditions mini bar */}
-        {envConds && (
+        {/* Live Weather & Environmental Mini Widget */}
+        {envConds ? (
           <div style={{
             marginBottom: 16,
-            padding: '10px 12px',
-            background: '#0d1714',
-            border: '1.5px solid #1E332E',
-            borderRadius: 10,
-            boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.3)',
+            padding: '12px 14px',
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-color)',
+            borderRadius: 14,
+            boxShadow: 'var(--shadow-sm)',
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-              <span style={{ fontSize: 9, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#516860' }}>
-                Live Conditions
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+              <span style={{ fontSize: 9.5, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-muted)' }}>
+                Atmospheric Monitor
               </span>
-              <PulseIndicator color="#00C982" />
+              <PulseIndicator color="#22C55E" label="Live Sensor" />
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
               {[
-                { value: envConds.airQuality.aqi, label: 'AQI', color: envConds.aqiColor },
-                { value: envConds.airQuality.pm25, label: 'PM2.5', color: '#FF8A3D' },
-                { value: `${envConds.weather.temperature}°`, label: 'Temp', color: '#FF5A5F' },
+                { value: envConds.airQuality.aqi, label: 'AQI Index', color: envConds.aqiColor },
+                { value: envConds.airQuality.pm25, label: 'PM2.5', color: '#F97316' },
+                { value: `${envConds.weather.temperature}°`, label: 'Temp', color: '#38BDF8' },
               ].map(({ value, label, color }) => (
-                <div key={label} style={{ textAlign: 'center' }}>
+                <div key={label} style={{ textAlign: 'center', background: 'var(--bg-inset)', padding: '7px 4px', borderRadius: 8 }}>
                   <div style={{ fontSize: 16, fontWeight: 800, color, fontFamily: 'Outfit, sans-serif', lineHeight: 1 }}>{value}</div>
-                  <div style={{ fontSize: 9, color: '#516860', fontWeight: 600, marginTop: 3, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{label}</div>
+                  <div style={{ fontSize: 9, color: 'var(--text-muted)', fontWeight: 700, marginTop: 4, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{label}</div>
                 </div>
               ))}
+            </div>
+          </div>
+        ) : (
+          <div style={{
+            marginBottom: 14,
+            padding: '10px 12px',
+            background: 'var(--bg-subtle)',
+            border: '1px solid var(--border-color)',
+            borderRadius: 12,
+            display: 'flex', alignItems: 'center', gap: 10,
+          }}>
+            <div style={{
+              width: 30, height: 30, borderRadius: 8,
+              background: 'linear-gradient(135deg, #38BDF8, #2563EB)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 2px 8px rgba(56, 189, 248, 0.3)', flexShrink: 0,
+            }}>
+              <CloudSun size={16} color="#FFFFFF" />
+            </div>
+            <div>
+              <div style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--text-primary)' }}>
+                Weather Condition
+              </div>
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>
+                28°C • Moderate Air • Mild Breeze
+              </div>
             </div>
           </div>
         )}
@@ -208,128 +192,121 @@ export const Dashboard: React.FC<DashboardProps> = ({ state, onStateChange }) =>
         />
       </aside>
 
-      {/* ─── CENTER MAP ─── */}
+      {/* ─── CENTER REAL MAP ─── */}
       <main style={{ flex: 1, position: 'relative', overflow: 'hidden' }}>
         <div style={{ position: 'absolute', inset: 0 }}>
-          {state.result ? (
-            <EcoMap
-              routes={state.result.routes}
-              selectedRouteId={state.selectedRouteId}
-              selectedSegmentId={selectedSegment?.id || null}
-              onSegmentClick={seg => setSelectedSegment(seg)}
-              onRouteClick={id => { onStateChange({ selectedRouteId: id }); setSelectedSegment(null); }}
-              originCoords={DEMO_ORIGIN_COORDS}
-              destCoords={DEMO_DEST_COORDS}
-              originLabel={state.request.origin || DEMO_ORIGIN}
-              destLabel={state.request.destination || DEMO_DESTINATION}
-            />
-          ) : (
-            /* Idle / loading state with illustrated map */
-            <div style={{
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-              height: '100%', background: '#07110F', padding: 40,
-            }}>
-              {state.isAnalyzing ? (
-                <div style={{ textAlign: 'center', maxWidth: 520 }}>
-                  <MapIdleScene isAnalyzing={true} />
-                  <div style={{ marginTop: 24 }}>
-                    <LoadingSpinner size={28} label="Analyzing environmental conditions..." />
-                    <div style={{ display: 'flex', gap: 7, justifyContent: 'center', marginTop: 14, flexWrap: 'wrap' }}>
-                      {['Routing engine', 'Air quality API', 'Heat analysis', 'Exposure scoring'].map((step, i) => (
-                        <span key={step} style={{
-                          fontSize: 10, fontWeight: 600, letterSpacing: '0.04em',
-                          background: '#101C1A', border: '1px solid #29423B',
-                          padding: '3px 9px', borderRadius: 20, color: '#81938D',
-                          animation: `pulse-eco 2s ${i * 0.3}s ease-in-out infinite`,
-                        }}>
-                          {step}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <>
-                  <MapIdleScene isAnalyzing={false} />
-                  <div style={{ marginTop: 28, textAlign: 'center', maxWidth: 400 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 8 }}>
-                      <Wind size={20} color="#00C982" />
-                      <h2 style={{ fontSize: 20, fontWeight: 800, color: '#F4F7F5', fontFamily: 'Outfit, sans-serif', margin: 0 }}>
-                        Enter your route
-                      </h2>
-                    </div>
-                    <p style={{ fontSize: 13, color: '#81938D', marginBottom: 20, lineHeight: 1.6 }}>
-                      Set your origin and destination on the left panel, then click <strong style={{ color: '#00C982' }}>Analyze Route</strong> to see environmental conditions.
-                    </p>
-                    <div style={{ display: 'flex', justifyContent: 'center', gap: 20 }}>
-                      {[
-                        { icon: <Wind size={14} />, text: 'PM2.5 & AQI analysis', color: '#FF8A3D' },
-                        { icon: <Thermometer size={14} />, text: 'Heat exposure', color: '#FF5A5F' },
-                        { icon: <Leaf size={14} />, text: 'Green corridors', color: '#00C982' },
-                      ].map(({ icon, text, color }) => (
-                        <div key={text} style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#81938D' }}>
-                          <span style={{ color }}>{icon}</span>
-                          {text}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
+          <EcoMap
+            routes={state.result ? state.result.routes : []}
+            selectedRouteId={state.selectedRouteId}
+            selectedSegmentId={selectedSegment?.id || null}
+            onSegmentClick={seg => setSelectedSegment(seg)}
+            onRouteClick={id => { onStateChange({ selectedRouteId: id }); setSelectedSegment(null); }}
+            originCoords={currentOriginCoords}
+            destCoords={currentDestCoords}
+            originLabel={state.request.origin || DEMO_ORIGIN}
+            destLabel={state.request.destination || DEMO_DESTINATION}
+            onMapClick={handleMapClick}
+            onOriginDrag={handleOriginDrag}
+            onDestDrag={handleDestDrag}
+          />
         </div>
 
-        {/* Segment detail overlay */}
-        {selectedSegment && (
-          <div style={{ position: 'absolute', bottom: 16, left: 16, width: 320, zIndex: 1000 }}>
-            <SegmentDetail segment={selectedSegment} onClose={() => setSelectedSegment(null)} />
+        {/* ─── Analyzing HUD Modal Overlay on top of Real Map ─── */}
+        {state.isAnalyzing && (
+          <div style={{
+            position: 'absolute', inset: 0, zIndex: 1200,
+            background: 'rgba(11, 18, 32, 0.55)',
+            backdropFilter: 'blur(6px)',
+            WebkitBackdropFilter: 'blur(6px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+          }}>
+            <div style={{
+              background: 'var(--bg-panel)',
+              border: '1.5px solid var(--sky-blue)',
+              borderRadius: 20,
+              padding: '26px 36px',
+              textAlign: 'center',
+              boxShadow: 'var(--shadow-elevated)',
+              maxWidth: 440,
+            }}>
+              <LoadingSpinner size={36} label="Predicting Weather & Clean Air Route..." />
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 14, fontWeight: 600 }}>
+                Querying OpenStreetMap roads & live Open-Meteo atmospheric radar...
+              </div>
+              <div style={{ display: 'flex', gap: 6, justifyContent: 'center', marginTop: 16, flexWrap: 'wrap' }}>
+                {['OSRM Road Graph', 'Open-Meteo AQI', 'Thermal Heat Index', 'Tree Canopy Filter'].map(step => (
+                  <span key={step} style={{
+                    fontSize: 10, fontWeight: 700,
+                    background: 'var(--bg-subtle)', border: '1px solid var(--border-color)',
+                    padding: '4px 9px', borderRadius: 14, color: 'var(--sky-blue)',
+                  }}>
+                    {step}
+                  </span>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
-        {/* Map top-left info overlay */}
-        {state.result && (
+        {/* ─── Guide Chip when no route analyzed yet ─── */}
+        {!state.result && !state.isAnalyzing && (
           <div style={{
-            position: 'absolute', top: 12, left: 12, zIndex: 500,
-            background: 'rgba(7, 17, 15, 0.94)',
-            border: '1.5px solid #29423B',
-            borderRadius: 9, padding: '6px 11px',
-            display: 'flex', alignItems: 'center', gap: 7,
-            boxShadow: '0 4px 0 rgba(0,0,0,0.3), 0 8px 20px rgba(0,0,0,0.4)',
-            backdropFilter: 'blur(12px)',
-            fontSize: 11, fontWeight: 600,
+            position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)', zIndex: 900,
+            pointerEvents: 'auto',
           }}>
-            <Activity size={11} style={{ color: '#00C982' }} />
-            <span style={{ color: '#81938D' }}>Source:</span>
-            <span style={{ color: '#00C982', textTransform: 'capitalize' }}>{state.result.dataSource}</span>
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: 10,
+              background: 'var(--bg-floating)',
+              border: '1.5px solid var(--border-color)',
+              borderRadius: 30, padding: '8px 20px',
+              boxShadow: 'var(--shadow-card)',
+              backdropFilter: 'blur(12px)',
+            }}>
+              <Sparkles size={14} color="#38BDF8" />
+              <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
+                {!currentOriginCoords ? (
+                  <>Click anywhere on map to set <strong style={{ color: '#22C55E' }}>Origin (📍)</strong></>
+                ) : !currentDestCoords ? (
+                  <>Origin pinned! Click map to set <strong style={{ color: '#FACC15' }}>Destination (★)</strong></>
+                ) : (
+                  <>Route points set! Click <strong style={{ color: '#38BDF8' }}>Calculate Eco Route</strong></>
+                )}
+              </span>
+            </div>
+          </div>
+        )}
+
+        {/* Segment detail overlay */}
+        {selectedSegment && (
+          <div style={{ position: 'absolute', bottom: 16, left: 16, width: 330, zIndex: 1000 }}>
+            <SegmentDetail segment={selectedSegment} onClose={() => setSelectedSegment(null)} />
           </div>
         )}
 
         {/* Selected route quick stats overlay */}
         {selectedRoute && !selectedSegment && (
           <div style={{
-            position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 500,
-            background: 'rgba(7, 17, 15, 0.96)',
-            border: '1.5px solid #29423B',
-            borderRadius: 9, padding: '7px 14px',
-            display: 'flex', alignItems: 'center', gap: 14,
-            boxShadow: '0 4px 0 rgba(0,0,0,0.3), 0 8px 20px rgba(0,0,0,0.5)',
-            backdropFilter: 'blur(12px)',
-            animation: 'slideInUp 0.3s ease',
+            position: 'absolute', top: 14, left: '50%', transform: 'translateX(-50%)', zIndex: 900,
+            background: 'var(--bg-floating)',
+            border: '1.5px solid var(--border-color)',
+            borderRadius: 14, padding: '9px 18px',
+            display: 'flex', alignItems: 'center', gap: 16,
+            boxShadow: 'var(--shadow-elevated)',
+            backdropFilter: 'blur(14px)',
           }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
               <div style={{
-                width: 10, height: 10, borderRadius: '50%', background: selectedRoute.color,
-                boxShadow: `0 0 6px ${selectedRoute.color}`,
+                width: 11, height: 11, borderRadius: '50%', background: selectedRoute.color,
+                boxShadow: `0 0 10px ${selectedRoute.color}`,
               }} />
-              <span style={{ fontSize: 12, fontWeight: 700, color: '#F4F7F5' }}>{selectedRoute.name}</span>
+              <span style={{ fontSize: 12.5, fontWeight: 800, color: 'var(--text-primary)' }}>{selectedRoute.name}</span>
             </div>
-            <div style={{ display: 'flex', gap: 14, fontSize: 11 }}>
-              <span style={{ color: '#81938D' }}>Exposure: <span style={{ fontWeight: 700, color: '#F4F7F5' }}>{selectedRoute.overallExposureScore}/100</span></span>
-              <span style={{ color: '#81938D' }}>PM2.5: <span style={{ fontWeight: 700, color: '#FF8A3D' }}>{selectedRoute.avgPm25} µg/m³</span></span>
+            <div style={{ display: 'flex', gap: 14, fontSize: 11.5 }}>
+              <span style={{ color: 'var(--text-muted)' }}>Exposure: <strong style={{ color: '#22C55E' }}>{selectedRoute.overallExposureScore}/100</strong></span>
+              <span style={{ color: 'var(--text-muted)' }}>PM2.5: <strong style={{ color: '#F97316' }}>{selectedRoute.avgPm25} µg/m³</strong></span>
               {selectedRoute.hotspotCount > 0 && (
-                <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#FF5A5F', fontWeight: 600 }}>
-                  <AlertTriangle size={10} />
+                <span style={{ display: 'flex', alignItems: 'center', gap: 4, color: '#EF4444', fontWeight: 700 }}>
+                  <AlertTriangle size={12} />
                   {selectedRoute.hotspotCount} hotspot{selectedRoute.hotspotCount > 1 ? 's' : ''}
                 </span>
               )}
@@ -338,19 +315,24 @@ export const Dashboard: React.FC<DashboardProps> = ({ state, onStateChange }) =>
         )}
       </main>
 
-      {/* ─── RIGHT PANEL ─── */}
+      {/* ─── RIGHT PANEL: ANALYSIS RESULTS ─── */}
       <aside style={{
-        width: 288, flexShrink: 0,
-        borderLeft: '1.5px solid #29423B',
+        width: 320, flexShrink: 0,
+        borderLeft: '1px solid var(--border-color)',
         padding: '16px 14px',
         overflowY: 'auto',
-        background: '#101C1A',
-        boxShadow: '-4px 0 0 rgba(0,0,0,0.25)',
+        background: 'var(--bg-panel)',
+        boxShadow: 'var(--shadow-card)',
+        zIndex: 20,
+        transition: 'background-color 0.25s ease, border-color 0.25s ease',
       }}>
         {/* Panel label */}
-        <div style={{ fontSize: 9, fontWeight: 800, letterSpacing: '0.14em', color: '#29423B', textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <Leaf size={11} />
-          Analysis Results
+        <div style={{
+          fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', color: 'var(--text-muted)',
+          textTransform: 'uppercase', marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8
+        }}>
+          <Leaf size={12} color="#22C55E" />
+          <span>Route Environmental Score</span>
         </div>
 
         {state.result ? (
@@ -365,17 +347,20 @@ export const Dashboard: React.FC<DashboardProps> = ({ state, onStateChange }) =>
             justifyContent: 'center', height: '70%', textAlign: 'center', padding: '0 16px',
           }}>
             <div style={{
-              width: 52, height: 52, borderRadius: 14,
-              background: 'rgba(0,201,130,0.06)',
-              border: '1.5px solid #1E332E',
+              width: 56, height: 56, borderRadius: 16,
+              background: 'var(--bg-subtle)',
+              border: '1.5px solid var(--border-color)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
               marginBottom: 14,
-              boxShadow: '0 4px 0 rgba(0,0,0,0.25)',
+              boxShadow: 'var(--shadow-sm)',
             }}>
-              <Activity size={22} color="#29423B" />
+              <Activity size={24} color="#38BDF8" />
             </div>
-            <p style={{ fontSize: 12, color: '#516860', lineHeight: 1.6, maxWidth: 200 }}>
-              Route analysis results will appear here after you click <strong style={{ color: '#81938D' }}>Analyze Route</strong>.
+            <div style={{ fontSize: 13.5, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 6 }}>
+              Awaiting Route Analysis
+            </div>
+            <p style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.6, maxWidth: 220 }}>
+              Search addresses, click on the map to place pins, or load the demo route, then click <strong style={{ color: '#38BDF8' }}>Calculate Eco Route</strong>.
             </p>
           </div>
         )}

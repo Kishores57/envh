@@ -8,6 +8,7 @@ import {
   Legend,
 } from 'recharts';
 import { Wind, Thermometer, Clock, AlertTriangle, Award } from 'lucide-react';
+import { useTheme } from '../context/ThemeContext';
 
 interface RoutesPageProps {
   state: AppState;
@@ -17,13 +18,21 @@ interface RoutesPageProps {
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (!active || !payload) return null;
   return (
-    <div className="glass-card p-3 text-xs">
-      <p className="font-semibold text-slate-200 mb-1">{label}</p>
+    <div style={{
+      background: 'var(--bg-floating)',
+      border: '1px solid var(--border-color)',
+      borderRadius: 10,
+      padding: '8px 12px',
+      boxShadow: 'var(--shadow-elevated)',
+      backdropFilter: 'blur(8px)',
+      fontSize: 11,
+    }}>
+      <p style={{ fontWeight: 700, color: 'var(--text-primary)', marginBottom: 4 }}>{label}</p>
       {payload.map((p: any) => (
-        <div key={p.name} className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full" style={{ background: p.color }} />
-          <span className="text-slate-400">{p.name}:</span>
-          <span className="font-semibold text-slate-200">{Math.round(p.value)}</span>
+        <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '2px 0' }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: p.color }} />
+          <span style={{ color: 'var(--text-muted)' }}>{p.name}:</span>
+          <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{Math.round(p.value)}</span>
         </div>
       ))}
     </div>
@@ -31,12 +40,16 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 export const RoutesPage: React.FC<RoutesPageProps> = ({ state, onSelectRoute }) => {
+  const { theme } = useTheme();
   const { result, selectedRouteId } = state;
 
   if (!result) {
     return (
-      <div className="flex items-center justify-center h-full text-slate-500 text-sm">
-        Analyze a route from the Dashboard first.
+      <div style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        height: '100%', color: 'var(--text-muted)', fontSize: 13, background: 'var(--bg-app)',
+      }}>
+        Analyze a route from the Navigator console first to compare alternative paths.
       </div>
     );
   }
@@ -61,20 +74,25 @@ export const RoutesPage: React.FC<RoutesPageProps> = ({ state, onSelectRoute }) 
     { subject: 'No Hotspots', ...Object.fromEntries(routes.map(r => [r.name.split('–')[0].trim(), Math.max(0, 100 - r.hotspotCount * 25)])) },
   ];
 
+  const gridColor = theme === 'dark' ? '#1E293B' : '#E2E8F0';
+  const axisColor = theme === 'dark' ? '#94A3B8' : '#64748B';
+
   return (
-    <div className="h-full pt-14 overflow-y-auto bg-dark-900 px-6 py-6">
-      <div className="max-w-5xl mx-auto">
+    <div style={{ height: '100%', paddingTop: 64, overflowY: 'auto', background: 'var(--bg-app)', padding: '64px 24px 32px' }}>
+      <div style={{ maxWidth: 1040, margin: '0 auto' }}>
 
         {/* Header */}
-        <div className="mb-6">
-          <h1 className="text-2xl font-display font-bold text-slate-100 mb-1">Route Comparison</h1>
-          <p className="text-sm text-slate-500">
-            {state.request.origin} → {state.request.destination}
+        <div style={{ marginBottom: 24 }}>
+          <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-primary)', fontFamily: 'Outfit, sans-serif', margin: '0 0 4px' }}>
+            Route Comparison & Weather Exposure
+          </h1>
+          <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: 0 }}>
+            {state.request.origin || 'Origin'} → {state.request.destination || 'Destination'}
           </p>
         </div>
 
         {/* Route cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16, marginBottom: 28 }}>
           {routes.map(route => {
             const isSelected = selectedRouteId === route.id;
             const isRec = route.id === result.recommendedRouteId;
@@ -82,52 +100,67 @@ export const RoutesPage: React.FC<RoutesPageProps> = ({ state, onSelectRoute }) 
               <button
                 key={route.id}
                 onClick={() => onSelectRoute(route.id)}
-                className={`glass-card p-5 text-left card-hover relative overflow-hidden transition-all duration-200 border ${
-                  isSelected ? 'border-opacity-100' : 'border-transparent'
-                }`}
-                style={isSelected ? { borderColor: route.color } : {}}
+                style={{
+                  background: 'var(--bg-card)',
+                  border: isSelected ? `2px solid ${route.color}` : '1px solid var(--border-color)',
+                  borderRadius: 16,
+                  padding: '18px',
+                  textAlign: 'left',
+                  cursor: 'pointer',
+                  position: 'relative',
+                  overflow: 'hidden',
+                  boxShadow: isSelected ? 'var(--shadow-elevated)' : 'var(--shadow-card)',
+                  transition: 'all 0.2s ease',
+                }}
               >
                 {/* Gradient top accent */}
-                <div className="absolute top-0 left-0 right-0 h-1 rounded-t-2xl" style={{ background: route.color }} />
+                <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: 4, background: route.color }} />
 
                 {isRec && (
-                  <div className="absolute top-3 right-3 flex items-center gap-1">
-                    <Award size={12} className="text-eco-400" />
-                    <span className="text-xs text-eco-400 font-bold">Best</span>
+                  <div style={{
+                    position: 'absolute', top: 12, right: 12,
+                    display: 'flex', alignItems: 'center', gap: 4,
+                    background: 'rgba(34, 197, 94, 0.15)', color: '#22C55E',
+                    padding: '2px 8px', borderRadius: 6, fontSize: 10.5, fontWeight: 800,
+                  }}>
+                    <Award size={12} color="#22C55E" />
+                    <span>Best</span>
                   </div>
                 )}
 
-                <div className="flex items-start gap-3 mt-2">
-                  <ScoreRing score={route.overallExposureScore} size={60} />
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-slate-100 text-sm mb-1 truncate">{route.name}</h3>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginTop: 4 }}>
+                  <ScoreRing score={route.overallExposureScore} size={62} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <h3 style={{ fontWeight: 800, color: 'var(--text-primary)', fontSize: 14, margin: '0 0 4px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {route.name}
+                    </h3>
                     <ExposureBadge level={route.exposureLevel} size="sm" />
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3 mt-4">
-                  <div className="flex items-center gap-1.5">
-                    <Clock size={12} className="text-slate-500" />
-                    <span className="text-xs text-slate-300">{formatDuration(route.totalDurationSeconds)}</span>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 14 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Clock size={12} color="var(--text-muted)" />
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>{formatDuration(route.totalDurationSeconds)}</span>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <Wind size={12} className="text-slate-500" />
-                    <span className="text-xs text-slate-300">PM2.5: {route.avgPm25}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Wind size={12} color="#F97316" />
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>PM2.5: {route.avgPm25}</span>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <Thermometer size={12} className="text-slate-500" />
-                    <span className="text-xs text-slate-300">{route.avgTemperature}°C avg</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Thermometer size={12} color="#38BDF8" />
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>{route.avgTemperature}°C</span>
                   </div>
-                  <div className="flex items-center gap-1.5">
-                    <AlertTriangle size={12} className="text-slate-500" />
-                    <span className="text-xs text-slate-300">{route.hotspotCount} hotspot{route.hotspotCount !== 1 ? 's' : ''}</span>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <AlertTriangle size={12} color="#EF4444" />
+                    <span style={{ fontSize: 12, color: 'var(--text-secondary)', fontWeight: 600 }}>{route.hotspotCount} hotspot{route.hotspotCount !== 1 ? 's' : ''}</span>
                   </div>
                 </div>
 
-                <div className="mt-4 space-y-2">
+                <div style={{ marginTop: 14, display: 'flex', flexDirection: 'column', gap: 7 }}>
                   <ProgressBar label="Air" value={route.airScore} />
-                  <ProgressBar label="Heat" value={route.heatScore} color="#f97316" />
-                  <ProgressBar label="Shade" value={route.shadeScore} color="#06b6d4" />
+                  <ProgressBar label="Heat" value={route.heatScore} color="#F97316" />
+                  <ProgressBar label="Shade" value={route.shadeScore} color="#22C55E" />
                 </div>
               </button>
             );
@@ -135,56 +168,76 @@ export const RoutesPage: React.FC<RoutesPageProps> = ({ state, onSelectRoute }) 
         </div>
 
         {/* Comparison table */}
-        <div className="glass-card p-5 mb-8">
-          <h2 className="font-semibold text-slate-100 mb-4">Route Comparison Table</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+        <div style={{
+          background: 'var(--bg-card)', border: '1px solid var(--border-color)',
+          borderRadius: 16, padding: '20px', marginBottom: 28, boxShadow: 'var(--shadow-card)',
+        }}>
+          <h2 style={{ fontSize: 15, fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 14px' }}>
+            Detailed Path Matrix
+          </h2>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12.5 }}>
               <thead>
-                <tr className="border-b border-slate-700/50">
-                  <th className="text-left text-xs text-slate-500 font-semibold pb-3 pr-4">Route</th>
-                  <th className="text-right text-xs text-slate-500 font-semibold pb-3 pr-4">Time</th>
-                  <th className="text-right text-xs text-slate-500 font-semibold pb-3 pr-4">Distance</th>
-                  <th className="text-right text-xs text-slate-500 font-semibold pb-3 pr-4">Air Score</th>
-                  <th className="text-right text-xs text-slate-500 font-semibold pb-3 pr-4">Heat Score</th>
-                  <th className="text-right text-xs text-slate-500 font-semibold pb-3 pr-4">Exposure</th>
-                  <th className="text-left text-xs text-slate-500 font-semibold pb-3">Status</th>
+                <tr style={{ borderBottom: '1.5px solid var(--border-color)' }}>
+                  <th style={{ textAlign: 'left', padding: '8px 12px', color: 'var(--text-muted)', fontWeight: 700 }}>Route Option</th>
+                  <th style={{ textAlign: 'right', padding: '8px 12px', color: 'var(--text-muted)', fontWeight: 700 }}>Duration</th>
+                  <th style={{ textAlign: 'right', padding: '8px 12px', color: 'var(--text-muted)', fontWeight: 700 }}>Distance</th>
+                  <th style={{ textAlign: 'right', padding: '8px 12px', color: 'var(--text-muted)', fontWeight: 700 }}>Air Score</th>
+                  <th style={{ textAlign: 'right', padding: '8px 12px', color: 'var(--text-muted)', fontWeight: 700 }}>Heat Score</th>
+                  <th style={{ textAlign: 'right', padding: '8px 12px', color: 'var(--text-muted)', fontWeight: 700 }}>Exposure Score</th>
+                  <th style={{ textAlign: 'left', padding: '8px 12px', color: 'var(--text-muted)', fontWeight: 700 }}>Classification</th>
                 </tr>
               </thead>
               <tbody>
-                {routes.map((route) => {
+                {routes.map(route => {
                   const isRec = route.id === result.recommendedRouteId;
                   return (
                     <tr
                       key={route.id}
-                      className={`border-b border-slate-800/40 cursor-pointer transition-colors ${isRec ? 'bg-eco-500/5' : 'hover:bg-slate-800/30'}`}
+                      style={{
+                        borderBottom: '1px solid var(--border-subtle)',
+                        cursor: 'pointer',
+                        background: isRec ? 'var(--bg-subtle)' : 'transparent',
+                        transition: 'background 0.15s ease',
+                      }}
                       onClick={() => onSelectRoute(route.id)}
                     >
-                      <td className="py-3 pr-4">
-                        <div className="flex items-center gap-2">
-                          <div className="w-2.5 h-2.5 rounded-full" style={{ background: route.color }} />
-                          <span className="font-medium text-slate-200">{route.name.split('–')[0].trim()}</span>
+                      <td style={{ padding: '10px 12px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ width: 9, height: 9, borderRadius: '50%', background: route.color }} />
+                          <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{route.name.split('–')[0].trim()}</span>
                         </div>
                       </td>
-                      <td className="py-3 pr-4 text-right text-slate-300">{formatDuration(route.totalDurationSeconds)}</td>
-                      <td className="py-3 pr-4 text-right text-slate-300">{formatDistance(route.totalDistanceMeters)}</td>
-                      <td className="py-3 pr-4 text-right">
+                      <td style={{ textAlign: 'right', padding: '10px 12px', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                        {formatDuration(route.totalDurationSeconds)}
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '10px 12px', color: 'var(--text-secondary)' }}>
+                        {formatDistance(route.totalDistanceMeters)}
+                      </td>
+                      <td style={{ textAlign: 'right', padding: '10px 12px' }}>
                         <ExposureBadge level={route.airScore < 30 ? 'low' : route.airScore < 55 ? 'moderate' : route.airScore < 75 ? 'elevated' : 'high'} size="sm" />
                       </td>
-                      <td className="py-3 pr-4 text-right">
+                      <td style={{ textAlign: 'right', padding: '10px 12px' }}>
                         <ExposureBadge level={route.heatScore < 30 ? 'low' : route.heatScore < 55 ? 'moderate' : route.heatScore < 75 ? 'elevated' : 'high'} size="sm" />
                       </td>
-                      <td className="py-3 pr-4 text-right">
-                        <span className="font-bold" style={{ color: exposureColor(route.exposureLevel) }}>
+                      <td style={{ textAlign: 'right', padding: '10px 12px' }}>
+                        <span style={{ fontWeight: 800, color: exposureColor(route.exposureLevel) }}>
                           {route.overallExposureScore}
                         </span>
                       </td>
-                      <td className="py-3">
+                      <td style={{ padding: '10px 12px' }}>
                         {isRec ? (
-                          <span className="text-xs badge-low px-2 py-0.5 rounded-full font-semibold">Recommended</span>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: '#22C55E', background: 'rgba(34,197,94,0.15)', padding: '2px 8px', borderRadius: 12 }}>
+                            Recommended
+                          </span>
                         ) : route.label === 'fastest' ? (
-                          <span className="text-xs text-blue-400 bg-blue-400/10 border border-blue-400/20 px-2 py-0.5 rounded-full">Fastest</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: '#2563EB', background: 'rgba(37,99,235,0.1)', padding: '2px 8px', borderRadius: 12 }}>
+                            Fastest
+                          </span>
                         ) : (
-                          <span className="text-xs text-yellow-400 bg-yellow-400/10 border border-yellow-400/20 px-2 py-0.5 rounded-full">Balanced</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: '#FACC15', background: 'rgba(250,204,21,0.15)', padding: '2px 8px', borderRadius: 12 }}>
+                            Balanced
+                          </span>
                         )}
                       </td>
                     </tr>
@@ -196,31 +249,41 @@ export const RoutesPage: React.FC<RoutesPageProps> = ({ state, onSelectRoute }) 
         </div>
 
         {/* Charts */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 20 }}>
           {/* Bar chart */}
-          <div className="glass-card p-5">
-            <h3 className="font-semibold text-slate-100 mb-4 text-sm">Exposure Score Comparison</h3>
-            <ResponsiveContainer width="100%" height={220}>
+          <div style={{
+            background: 'var(--bg-card)', border: '1px solid var(--border-color)',
+            borderRadius: 16, padding: '20px', boxShadow: 'var(--shadow-card)',
+          }}>
+            <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 16px' }}>
+              Exposure Score Comparison
+            </h3>
+            <ResponsiveContainer width="100%" height={230}>
               <BarChart data={barData} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                <XAxis dataKey="name" tick={{ fill: '#64748b', fontSize: 11 }} />
-                <YAxis tick={{ fill: '#64748b', fontSize: 11 }} domain={[0, 100]} />
+                <CartesianGrid strokeDasharray="3 3" stroke={gridColor} />
+                <XAxis dataKey="name" tick={{ fill: axisColor, fontSize: 11 }} />
+                <YAxis tick={{ fill: axisColor, fontSize: 11 }} domain={[0, 100]} />
                 <Tooltip content={<CustomTooltip />} />
-                <Bar dataKey="Air Score" fill="#22c55e" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Heat Score" fill="#f97316" radius={[4, 4, 0, 0]} />
-                <Bar dataKey="Exposure" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                <Legend wrapperStyle={{ fontSize: '11px', color: '#64748b' }} />
+                <Bar dataKey="Air Score" fill="#22C55E" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Heat Score" fill="#F97316" radius={[4, 4, 0, 0]} />
+                <Bar dataKey="Exposure" fill="#38BDF8" radius={[4, 4, 0, 0]} />
+                <Legend wrapperStyle={{ fontSize: '11px', color: axisColor }} />
               </BarChart>
             </ResponsiveContainer>
           </div>
 
           {/* Radar chart */}
-          <div className="glass-card p-5">
-            <h3 className="font-semibold text-slate-100 mb-4 text-sm">Multi-factor Analysis</h3>
-            <ResponsiveContainer width="100%" height={220}>
+          <div style={{
+            background: 'var(--bg-card)', border: '1px solid var(--border-color)',
+            borderRadius: 16, padding: '20px', boxShadow: 'var(--shadow-card)',
+          }}>
+            <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', margin: '0 0 16px' }}>
+              Multi-Factor Atmospheric Radar
+            </h3>
+            <ResponsiveContainer width="100%" height={230}>
               <RadarChart data={radarData}>
-                <PolarGrid stroke="#1e293b" />
-                <PolarAngleAxis dataKey="subject" tick={{ fill: '#64748b', fontSize: 11 }} />
+                <PolarGrid stroke={gridColor} />
+                <PolarAngleAxis dataKey="subject" tick={{ fill: axisColor, fontSize: 11 }} />
                 {routes.map(r => (
                   <Radar
                     key={r.id}
@@ -228,15 +291,16 @@ export const RoutesPage: React.FC<RoutesPageProps> = ({ state, onSelectRoute }) 
                     dataKey={r.name.split('–')[0].trim()}
                     stroke={r.color}
                     fill={r.color}
-                    fillOpacity={0.1}
+                    fillOpacity={0.15}
                   />
                 ))}
-                <Legend wrapperStyle={{ fontSize: '11px', color: '#64748b' }} />
+                <Legend wrapperStyle={{ fontSize: '11px', color: axisColor }} />
                 <Tooltip content={<CustomTooltip />} />
               </RadarChart>
             </ResponsiveContainer>
           </div>
         </div>
+
       </div>
     </div>
   );

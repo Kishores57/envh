@@ -94,56 +94,27 @@ Resources:
         - Key: Project
           Value: EcoRouteAI
 
-  # ─── Lambda IAM Role ──────────────────────────────────────────────────────────
-  LambdaExecutionRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: EcoRoute-LambdaRole
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: sts:AssumeRole
-      ManagedPolicyArns:
-        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
-        - arn:aws:iam::aws:policy/AWSXRayDaemonWriteAccess
-      Policies:
-        - PolicyName: EcoRouteLambdaPolicy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - dynamodb:GetItem
-                  - dynamodb:PutItem
-                  - dynamodb:UpdateItem
-                  - dynamodb:Query
-                  - dynamodb:Scan
-                Resource:
-                  - !GetAtt UserPreferencesTable.Arn
-                  - !GetAtt SavedRoutesTable.Arn
-                  - !GetAtt AnalysisHistoryTable.Arn
-              - Effect: Allow
-                Action:
-                  - s3:GetObject
-                  - s3:PutObject
-                Resource: !Sub '${EcoRouteDataBucket.Arn}/*'
-              - Effect: Allow
-                Action:
-                  - sagemaker:InvokeEndpoint
-                Resource: !Sub 'arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:endpoint/ecoroute-pm25-forecast'
-
   # ─── Lambda Functions ─────────────────────────────────────────────────────────
   RouteAnalysisFunction:
     Type: AWS::Serverless::Function
     Properties:
       FunctionName: EcoRoute-routeAnalysis
       Handler: handler.handler
-      CodeUri: lambda/routeAnalysis/
-      Role: !GetAtt LambdaExecutionRole.Arn
+      CodeUri: ../lambda/routeAnalysis/
       Description: Analyzes routes and returns environmental exposure scores
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref UserPreferencesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref SavedRoutesTable
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AnalysisHistoryTable
+        - S3CrudPolicy:
+            BucketName: !Ref EcoRouteDataBucket
+        - Statement:
+            - Effect: Allow
+              Action: sagemaker:InvokeEndpoint
+              Resource: !Sub 'arn:aws:sagemaker:${AWS::Region}:${AWS::AccountId}:endpoint/ecoroute-pm25-forecast'
       Events:
         ApiEvent:
           Type: Api
@@ -157,9 +128,13 @@ Resources:
     Properties:
       FunctionName: EcoRoute-exposureAnalysis
       Handler: handler.handler
-      CodeUri: lambda/exposureAnalysis/
-      Role: !GetAtt LambdaExecutionRole.Arn
+      CodeUri: ../lambda/exposureAnalysis/
       Description: Calculates per-segment environmental exposure
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref AnalysisHistoryTable
+        - S3CrudPolicy:
+            BucketName: !Ref EcoRouteDataBucket
       Events:
         ApiEvent:
           Type: Api
@@ -174,11 +149,7 @@ Resources:
     Properties:
       FunctionName: EcoRoute-health
       Handler: index.handler
-      CodeUri: lambda/health/
-      Role: !GetAtt LambdaExecutionRole.Arn
-      InlineCode: |
-        def handler(event, context):
-            return {"statusCode": 200, "headers": {"Access-Control-Allow-Origin": "*"}, "body": '{"status":"ok","service":"EcoRoute AI"}'}
+      CodeUri: ../lambda/health/
       Events:
         ApiEvent:
           Type: Api
@@ -212,8 +183,14 @@ Resources:
           "widgets": [
             {
               "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 8,
+              "height": 6,
               "properties": {
+                "region": "${AWS::Region}",
                 "title": "Lambda Invocations",
+                "view": "timeSeries",
                 "metrics": [
                   ["AWS/Lambda", "Invocations", "FunctionName", "EcoRoute-routeAnalysis"],
                   ["AWS/Lambda", "Invocations", "FunctionName", "EcoRoute-exposureAnalysis"]
@@ -224,8 +201,14 @@ Resources:
             },
             {
               "type": "metric",
+              "x": 8,
+              "y": 0,
+              "width": 8,
+              "height": 6,
               "properties": {
+                "region": "${AWS::Region}",
                 "title": "API Gateway Errors",
+                "view": "timeSeries",
                 "metrics": [
                   ["AWS/ApiGateway", "5XXError", "ApiName", "EcoRoute-API"],
                   ["AWS/ApiGateway", "4XXError", "ApiName", "EcoRoute-API"]
@@ -236,8 +219,14 @@ Resources:
             },
             {
               "type": "metric",
+              "x": 16,
+              "y": 0,
+              "width": 8,
+              "height": 6,
               "properties": {
+                "region": "${AWS::Region}",
                 "title": "Lambda Duration (ms)",
+                "view": "timeSeries",
                 "metrics": [
                   ["AWS/Lambda", "Duration", "FunctionName", "EcoRoute-routeAnalysis"],
                   ["AWS/Lambda", "Duration", "FunctionName", "EcoRoute-exposureAnalysis"]
