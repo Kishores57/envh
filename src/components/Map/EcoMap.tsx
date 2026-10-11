@@ -226,7 +226,7 @@ export const EcoMap: React.FC<EcoMapProps> = ({
     : initialCenter;
 
   const allCoords = useMemo(() => {
-    if (routes.length > 0) return routes.flatMap(r => r.coordinates);
+    if (routes.length > 0) return routes.flatMap(r => r.coordinates || []);
     const pts: Coordinates[] = [];
     if (originCoords) pts.push(originCoords);
     if (destCoords) pts.push(destCoords);
@@ -328,33 +328,37 @@ export const EcoMap: React.FC<EcoMapProps> = ({
           const isSelected = selectedRouteId === route.id;
           const isOther = selectedRouteId && !isSelected;
           const routeColor = routeColorMap[route.id] || route.color || '#22C55E';
+          const routeCoords = (route.coordinates || []).map(c => [c.lat, c.lng] as [number, number]);
+          const routeSegments = route.segments || [];
 
           return (
             <React.Fragment key={route.id}>
               {/* Outer glow aura for selected route */}
-              {isSelected && (
+              {isSelected && routeCoords.length > 0 && (
                 <Polyline
-                  positions={route.coordinates.map(c => [c.lat, c.lng])}
+                  positions={routeCoords}
                   pathOptions={{ color: routeColor, weight: 18, opacity: 0.2 }}
                 />
               )}
-              {isSelected && (
+              {isSelected && routeCoords.length > 0 && (
                 <Polyline
-                  positions={route.coordinates.map(c => [c.lat, c.lng])}
+                  positions={routeCoords}
                   pathOptions={{ color: routeColor, weight: 10, opacity: 0.35 }}
                 />
               )}
 
               {/* Segmented breakdown for selected route */}
-              {isSelected
-                ? route.segments.map(seg => {
+              {isSelected && routeSegments.length > 0
+                ? routeSegments.map(seg => {
                     const color = scoreToMapColor(seg.overallExposureScore);
                     const isHov = hoveredSegId === seg.id;
                     const isSel = selectedSegmentId === seg.id;
+                    const segCoords = (seg.coordinates || []).map(c => [c.lat, c.lng] as [number, number]);
+                    if (segCoords.length === 0) return null;
                     return (
                       <Polyline
                         key={seg.id}
-                        positions={seg.coordinates.map(c => [c.lat, c.lng])}
+                        positions={segCoords}
                         pathOptions={{
                           color: isSel ? 'var(--text-primary)' : color,
                           weight: isHov || isSel ? 9 : 6,
@@ -392,10 +396,10 @@ export const EcoMap: React.FC<EcoMapProps> = ({
                       </Polyline>
                     );
                   })
-                : (
+                : routeCoords.length > 0 && (
                   <>
                     <Polyline
-                      positions={route.coordinates.map(c => [c.lat, c.lng])}
+                      positions={routeCoords}
                       pathOptions={{
                         color: routeColor,
                         weight: 8,
@@ -403,7 +407,7 @@ export const EcoMap: React.FC<EcoMapProps> = ({
                       }}
                     />
                     <Polyline
-                      positions={route.coordinates.map(c => [c.lat, c.lng])}
+                      positions={routeCoords}
                       pathOptions={{
                         color: routeColor,
                         weight: 4,
@@ -418,8 +422,8 @@ export const EcoMap: React.FC<EcoMapProps> = ({
               }
 
               {/* Hotspot indicators with animated rings */}
-              {isSelected && route.segments
-                .filter(s => s.isHotspot)
+              {isSelected && routeSegments
+                .filter(s => s.isHotspot && s.coordinates && s.coordinates.length > 0)
                 .map(seg => {
                   const center = seg.coordinates[Math.floor(seg.coordinates.length / 2)];
                   if (!center) return null;

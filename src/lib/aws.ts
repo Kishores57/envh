@@ -34,22 +34,28 @@ import { calculateRealRoutes, searchPlaces } from './openSourceApi';
 export async function analyzeRoute(req: RouteRequest): Promise<RouteAnalysisResult> {
   const awsOk = await checkAwsAvailability();
 
+  // 1. Try AWS Lambda if available AND verify it returned valid geometry
   if (awsOk) {
     try {
       const res = await fetch(`${API_GW_BASE}/analyze-route`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(req),
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(8000),
       });
-      if (!res.ok) throw new Error(`API error ${res.status}`);
-      return await res.json();
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.routes?.length > 0 && data.routes[0].coordinates?.length > 0) {
+          return data;
+        }
+      }
     } catch (err) {
-      console.warn('[EcoRoute] Lambda call failed, falling back to open source API:', err);
+      console.warn('[EcoRoute] Lambda call failed, falling back to real routing API:', err);
     }
   }
 
-  // Attempt real routing via OpenStreetMap Nominatim + OSRM + Open-Meteo
+  // 2. Compute dynamic route using OpenStreetMap Nominatim + OSRM + Open-Meteo
+  let result: RouteAnalysisResult | null = null;
   try {
     let originCoords = req.originCoords;
     let destCoords = req.destinationCoords;
@@ -69,7 +75,7 @@ export async function analyzeRoute(req: RouteRequest): Promise<RouteAnalysisResu
     }
 
     if (originCoords && destCoords) {
-      return await calculateRealRoutes(
+      result = await calculateRealRoutes(
         originCoords,
         destCoords,
         req.origin || 'Origin',
@@ -82,9 +88,31 @@ export async function analyzeRoute(req: RouteRequest): Promise<RouteAnalysisResu
     console.warn('[EcoRoute] Real routing API error, falling back to demo data:', err);
   }
 
-  // Deterministic fallback
-  await simulateDelay(800);
-  return getDemoAnalysisResult(req.priority);
+  // 3. Fallback to rich demo data if no coordinates could be determined
+  if (!result) {
+    await simulateDelay(600);
+    result = getDemoAnalysisResult(req.priority);
+  }
+
+  // 4. Record telemetry into AWS DynamoDB & CloudWatch via API Gateway asynchronously
+  if (awsOk && API_GW_BASE) {
+    fetch(`${API_GW_BASE}/analyze-route`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        origin: req.origin || 'Origin',
+        destination: req.destination || 'Destination',
+        priority: req.priority || 'cleanest',
+        profile: req.profile || 'general',
+        travelMode: req.travelMode || 'walking',
+        routeCount: result.routes.length,
+        recommendedRouteId: result.recommendedRouteId,
+      }),
+      signal: AbortSignal.timeout(3000),
+    }).catch(() => {});
+  }
+
+  return result;
 }
 
 // ─── User Preferences (DynamoDB via API) ─────────────────────────────────────
